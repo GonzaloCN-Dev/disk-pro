@@ -8,7 +8,7 @@
 [![C++20](https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus)](#compilar-desde-el-código)
 [![Slint](https://img.shields.io/badge/UI-Slint-6B4EFF)](https://slint.dev)
 [![Licencia MIT](https://img.shields.io/badge/Licencia-MIT-green.svg)](LICENSE)
-[![Solo lectura](https://img.shields.io/badge/modo-solo%20lectura-orange)](#estado-y-límites)
+[![Escritura limitada](https://img.shields.io/badge/escritura-solo%20VHD-orange)](#estado-y-límites)
 [![Sin telemetría](https://img.shields.io/badge/telemetr%C3%ADa-ninguna-lightgrey)](#datos-y-privacidad)
 
 **Mira tus discos. Entiende tus particiones. Sin tocar nada.**
@@ -20,9 +20,9 @@
 
 Disk Pro es una aplicación de escritorio en español e inglés para inspeccionar discos físicos y virtuales, sus tablas de particiones y su salud. Está escrita en C++ con Slint: sin Electron, sin WebView y sin servidores. Desarrollado por **Gonzalo Cruz Núñez** ([GCN Dev](https://dev.gonzalocn.com/)).
 
-> **Estado: 0.1.0, solo lectura.** Esta versión **no modifica discos**: no crea, borra, formatea ni redimensiona particiones, ni clona, ni recupera archivos. Esas funciones están pendientes y no se simulan. Consulta [Estado y límites](#estado-y-límites).
+> **Estado: 0.2.0.** El programa es de lectura salvo una operación: restaurar una copia de la tabla de particiones **en discos virtuales (VHD)**, desde la línea de comandos. No crea, borra, formatea ni redimensiona particiones, ni clona, ni recupera archivos: esas funciones están pendientes y no se simulan. Consulta [Estado y límites](#estado-y-límites).
 
-*EN – Disk Pro is a free, open-source, native Windows disk inspector (GPT/MBR, partitions, NVMe health, imaging, hex viewer). Version 0.1.0 is read-only: it never modifies disks.*
+*EN – Disk Pro is a free, open-source, native Windows disk inspector (GPT/MBR, partitions, NVMe health, imaging, hex viewer). Version 0.2.0 is read-only except for one command that restores a partition-table backup onto virtual disks only.*
 
 ## Capturas
 
@@ -48,6 +48,8 @@ Disk Pro es una aplicación de escritorio en español e inglés para inspecciona
 | **Salud** | Datos NVMe (temperatura, reserva, desgaste, horas) y estado genérico de fallo previsto. Si el dispositivo no lo expone, indica «n/d». |
 | **SHA-256** | Hash de un disco o de un archivo de imagen, con progreso y cancelación. |
 | **Crear imagen** | Copia un disco o archivo a una imagen. Nunca sobrescribe un archivo existente; los bloques ilegibles se rellenan con ceros y se cuentan. |
+| **Copia de la tabla de particiones** | Guarda el primer y último MiB del disco (MBR/GPT y copia de seguridad GPT) en un archivo `.ptb` con SHA-256, y `diskpro-tools ptverify` comprueba su integridad. Se restaura con `diskpro-restore` (ver abajo). |
+| **Restaurar tabla (solo VHD)** | `diskpro-restore copia.ptb N` muestra una vista previa; para aplicar hay que escribir `--confirm "RESTORE DISK N"`. Bloquea el disco de sistema, discos no virtuales, de más de 4 GiB, de otro tamaño o con letras montadas, y verifica releyendo. Solo toca el primer y último MiB. Necesita administrador. |
 | **Análisis de superficie** | Lee todo el origen en solo lectura y lista los bloques ilegibles y la velocidad. |
 | **Visor hexadecimal** | Navega por offset y por sectores, con columna ASCII. |
 | **Análisis de imágenes** | `diskpro-cli imagen.vhd` analiza MBR/GPT en un archivo (512 y 4096 bytes por sector, pie de VHD fijo). |
@@ -57,8 +59,8 @@ Leer discos físicos con las herramientas requiere ejecutar Disk Pro como admini
 
 ## Estado y límites
 
-- **No incluido todavía:** crear, borrar, formatear, redimensionar o mover particiones; clonar; restaurar imágenes; recuperación de archivos; discos virtuales (montar/convertir); atributos SMART de discos ATA.
-- **Probado:** pruebas unitarias con imágenes sintéticas (GPT, MBR, 512/4096, corrupción, errores de lectura inyectados), SHA-256 con vectores conocidos, y pruebas con un VHD desechable (GPT y MBR).
+- **No incluido todavía:** crear, borrar, formatear, redimensionar o mover particiones; restaurar en discos físicos; interfaz gráfica para restaurar; clonar; restaurar imágenes; recuperación de archivos; discos virtuales (montar/convertir); atributos SMART de discos ATA.
+- **Probado:** pruebas unitarias con imágenes sintéticas (GPT, MBR, 512/4096, corrupción, errores de lectura inyectados), SHA-256 con vectores conocidos, y pruebas con un VHD desechable (GPT y MBR), incluida la restauración de la tabla y el bloqueo del disco de sistema.
 - **Sin probar:** VHDX, sectores de 4096 bytes en dispositivos reales, y las herramientas de imagen/superficie sobre un disco físico.
 - El instalador **no está firmado**: Windows SmartScreen puede avisar. Comprueba el SHA-256 de la descarga.
 
@@ -68,7 +70,7 @@ Windows 10 u 11 de 64 bits. El instalador incluye el runtime de Visual C++; el z
 
 ## Instalación
 
-Descarga `DiskPro-Setup-0.1.0.exe` (instalador, por usuario, sin administrador) o `DiskPro-0.1.0-win64-portable.zip` desde [Releases](https://github.com/GonzaloCN-Dev/disk-pro/releases/latest). Los hashes están en `SHA256SUMS.txt`.
+Descarga `DiskPro-Setup-0.2.0.exe` (instalador, por usuario, sin administrador) o `DiskPro-0.2.0-win64-portable.zip` desde [Releases](https://github.com/GonzaloCN-Dev/disk-pro/releases/latest). Los hashes están en `SHA256SUMS.txt`.
 
 ## Compilar desde el código
 
@@ -76,11 +78,11 @@ Requisitos: Visual Studio 2022 Build Tools (C++, CMake, Ninja) y el SDK C++ de S
 
 ```
 build.cmd      # compila y ejecuta las pruebas
-package.cmd    # genera dist\DiskPro-0.1.0-win64-portable.zip
+package.cmd    # genera dist\DiskPro-0.2.0-win64-portable.zip
 powershell -File installer\build-installer.ps1   # instalador (requiere Inno Setup 6)
 ```
 
-Pruebas con VHD (PowerShell **como administrador**; solo usa un VHD desechable en `%TEMP%` y se niega a tocar otros discos):
+Pruebas con VHD (PowerShell **como administrador**; `tests\vhdx\run_all.ps1` y `tests\vhdx\run_restore_all.ps1`; solo usa un VHD desechable en `%TEMP%` y se niega a tocar otros discos):
 `powershell -ExecutionPolicy Bypass -File tests\vhdx\run_all.ps1`
 
 Arquitectura: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
@@ -92,3 +94,5 @@ Sin telemetría, sin cuentas y sin conexión a Internet. Los ajustes (tema, idio
 ## Licencia
 
 Código propio bajo licencia MIT ([`LICENSE`](LICENSE)). Slint se usa bajo su licencia Royalty-free 2.0 y no queda cubierto por la MIT: consulta [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). Proyecto independiente, sin afiliación con otros gestores de discos.
+
+

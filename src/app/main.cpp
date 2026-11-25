@@ -62,7 +62,7 @@ const ToolStr kToolEn = {"Tools", "SHA-256", "Create image…", "Surface scan", 
                          "Cancelled.", "Finished.", "unreadable blocks: ", "Output file already exists; choose another name.",
                          "Source: disk", "MB/s"};
 
-std::string pickFile(bool save) {
+std::string pickFile(bool save, const wchar_t* ext = L"img") {
     wchar_t buf[MAX_PATH * 4] = L"";
     OPENFILENAMEW o{};
     o.lStructSize = sizeof o;
@@ -70,7 +70,7 @@ std::string pickFile(bool save) {
     o.nMaxFile = DWORD(std::size(buf));
     o.lpstrFilter = L"Disk images (*.img;*.vhd;*.bin;*.raw;*.dd)\0*.img;*.vhd;*.bin;*.raw;*.dd\0All files\0*.*\0";
     o.Flags = save ? (OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR) : (OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR);
-    if (save) o.lpstrDefExt = L"img";
+    if (save) o.lpstrDefExt = ext;
     if (!(save ? GetSaveFileNameW(&o) : GetOpenFileNameW(&o))) return {};
     int n = WideCharToMultiByte(CP_UTF8, 0, buf, -1, nullptr, 0, nullptr, nullptr);
     std::string s(size_t(n > 0 ? n - 1 : 0), 0);
@@ -223,7 +223,7 @@ int main(int argc, char** argv) {
         auto& g = ui->global<Tr>();
         g.set_tools(S(s.tools)); g.set_t_hash(S(s.hash)); g.set_t_image(S(s.image)); g.set_t_scan(S(s.scan));
         g.set_t_hex(S(s.hex)); g.set_t_open(S(s.open)); g.set_t_cancel(S(s.cancel)); g.set_t_prev(S(s.prev));
-        g.set_t_next(S(s.next)); g.set_t_offset(S(s.offset)); g.set_t_back(S(s.back)); g.set_t_note(S(s.note));
+        g.set_t_next(S(s.next)); g.set_t_offset(S(s.offset)); g.set_t_back(S(s.back)); g.set_t_ptb(S(lang == 1 ? "Back up partition table…" : "Copia de la tabla de particiones…")); g.set_t_note(S(s.note));
     };
     (void)ts;
     toolStrings();
@@ -269,6 +269,21 @@ int main(int argc, char** argv) {
             ui->set_hex_offset(S(std::to_string(off)));
             ui->set_tool_output(S(out));
             ui->set_tool_status(S("offset " + std::to_string(off)));
+            return;
+        }
+        if (cmd == "ptbackup") {
+            std::string p = pickFile(true, L"ptb");
+            if (p.empty()) return;
+            if (p.find('.', p.find_last_of("\\/") == std::string::npos ? 0 : p.find_last_of("\\/")) == std::string::npos) p += ".ptb";
+            auto r = backupPartitionTable(*src, p);
+            ui->set_tool_progress(r.ok ? 1.f : 0.f);
+            if (r.ok) {
+                ui->set_tool_status(S(s.done));
+                ui->set_tool_output(S(std::string(s.done) + "\n" + p + "\nSHA-256: " + r.sha256 + "\n" + r.scheme + ", " + humanSize(r.headBytes + r.tailBytes)));
+            } else {
+                ui->set_tool_status(S(r.error == "output file already exists" ? s.outExists : "Error: " + r.error));
+                ui->set_tool_output(S(""));
+            }
             return;
         }
         std::string outPath;
@@ -326,6 +341,8 @@ int main(int argc, char** argv) {
     ui->run();
     return 0;
 }
+
+
 
 
 

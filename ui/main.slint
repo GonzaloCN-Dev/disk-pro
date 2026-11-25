@@ -47,6 +47,7 @@ export global Tr {
     in property <string> t-offset;
     in property <string> t-back;
     in property <string> t-note;
+    in property <string> t-ptb;
 }
 
 component Section inherits Text {
@@ -314,6 +315,7 @@ export component MainWindow inherits Window {
                         Button { text: Tr.t-hash; enabled: !root.tool-busy; clicked => { root.tool-run("hash", ""); } }
                         Button { text: Tr.t-image; enabled: !root.tool-busy; clicked => { root.tool-run("image", ""); } }
                         Button { text: Tr.t-scan; enabled: !root.tool-busy; clicked => { root.tool-run("scan", ""); } }
+                        Button { text: Tr.t-ptb; enabled: !root.tool-busy; clicked => { root.tool-run("ptbackup", ""); } }
                         Button { text: Tr.t-cancel; enabled: root.tool-busy; clicked => { root.tool-cancel(); } }
                     }
                     HorizontalLayout {
@@ -367,7 +369,7 @@ export component MainWindow inherits Window {
             VerticalLayout {
                 padding: 16px;
                 spacing: 8px;
-                Text { text: Tr.app-title + " 0.1.0"; font-size: 18px; font-weight: 700; color: Palette.foreground; }
+                Text { text: Tr.app-title + " 0.2.0"; font-size: 18px; font-weight: 700; color: Palette.foreground; }
                 Text { text: Tr.copyright; color: Palette.foreground; wrap: word-wrap; }
                 Text { text: "MIT · dev.gonzalocn.com"; color: Palette.foreground; }
                 AboutSlint { }
@@ -376,6 +378,8 @@ export component MainWindow inherits Window {
         }
     }
 }
+
+
 
 
 

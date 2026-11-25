@@ -1,4 +1,4 @@
-// Disk Pro - MIT License - Copyright (c) Gonzalo Cruz Núñez
+﻿// Disk Pro - MIT License - Copyright (c) Gonzalo Cruz Núñez
 // Read-only utilities over a ByteSource: SHA-256, imaging, surface scan, hex dump.
 #pragma once
 #include <atomic>
@@ -56,4 +56,15 @@ ScanResult surfaceScan(const ByteSource& src, const std::atomic<bool>& cancel, c
 // "00000000  xx xx ...  |ascii|" lines; returns empty string on read error.
 std::string hexDump(const ByteSource& src, uint64_t offset, size_t len);
 
+struct BackupResult {
+    bool ok = false;
+    std::string error, sha256, scheme;
+    uint64_t headBytes = 0, tailBytes = 0, diskSize = 0;
+};
+// Saves the first and last MiB of the source (MBR/GPT primary and backup areas) to a new file. Read-only on the source.
+BackupResult backupPartitionTable(const ByteSource& src, const std::string& outPath);
+// Checks the container integrity (header + SHA-256). Never touches any disk.
+BackupResult verifyPartitionBackup(const std::string& path);
+
 }  // namespace diskpro
+

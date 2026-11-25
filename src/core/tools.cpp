@@ -1,4 +1,4 @@
-// Disk Pro - MIT License - Copyright (c) Gonzalo Cruz Núñez
+﻿// Disk Pro - MIT License - Copyright (c) Gonzalo Cruz Núñez
 #include "tools.h"
 #include <chrono>
 #include <cstdio>
@@ -180,4 +180,83 @@ std::string hexDump(const ByteSource& src, uint64_t offset, size_t len) {
     return out;
 }
 
+namespace {
+constexpr uint64_t kArea = 1u << 20;
+const char kMagic[] = "DISKPRO-PTBACKUP 1\n";
+}
+
+BackupResult backupPartitionTable(const ByteSource& src, const std::string& outPath) {
+    namespace fs = std::filesystem;
+    BackupResult r;
+    std::error_code ec;
+    uint64_t total = src.size();
+    if (total < 4096) { r.error = "source too small"; return r; }
+    uint64_t head = std::min(kArea, total);
+    uint64_t tail = total > head ? std::min(kArea, total - head) : 0;
+    std::vector<uint8_t> hb(static_cast<size_t>(head));
+    std::vector<uint8_t> tb(static_cast<size_t>(tail));
+    if (!src.read(0, hb.data(), hb.size())) { r.error = "cannot read start of disk"; return r; }
+    if (tail && !src.read(total - tail, tb.data(), tb.size())) { r.error = "cannot read end of disk"; return r; }
+    auto lay = analyze(src);
+    Sha256 h; h.update(hb.data(), hb.size()); h.update(tb.data(), tb.size());
+    r.sha256 = h.finalHex(); r.scheme = schemeName(lay.scheme);
+    r.headBytes = head; r.tailBytes = tail; r.diskSize = total;
+    if (fs::exists(fs::u8path(outPath), ec)) { r.ok = false; r.error = "output file already exists"; return r; }
+    std::FILE* f =
+#ifdef _WIN32
+        _wfopen(fs::u8path(outPath).c_str(), L"wbx");
+#else
+        std::fopen(outPath.c_str(), "wbx");
+#endif
+    if (!f) { r.error = "cannot create output file"; return r; }
+    std::string hdr = std::string(kMagic) + "scheme=" + r.scheme + "\nsectorSize=" + std::to_string(lay.sectorSize) + "\ndiskId=" + lay.diskId +
+                      "\ndiskSize=" + std::to_string(total) + "\nheadBytes=" + std::to_string(head) +
+                      "\ntailBytes=" + std::to_string(tail) + "\nsha256=" + r.sha256 + "\n\n";
+    bool ok = std::fwrite(hdr.data(), 1, hdr.size(), f) == hdr.size() && std::fwrite(hb.data(), 1, hb.size(), f) == hb.size() &&
+              (tail == 0 || std::fwrite(tb.data(), 1, tb.size(), f) == tb.size());
+    ok = (std::fclose(f) == 0) && ok;
+    if (!ok) { fs::remove(fs::u8path(outPath), ec); r.error = "write error"; return r; }
+    r.ok = true;
+    return r;
+}
+
+BackupResult verifyPartitionBackup(const std::string& path) {
+    namespace fs = std::filesystem;
+    BackupResult r;
+    std::FILE* f =
+#ifdef _WIN32
+        _wfopen(fs::u8path(path).c_str(), L"rb");
+#else
+        std::fopen(path.c_str(), "rb");
+#endif
+    if (!f) { r.error = "cannot open file"; return r; }
+    std::string all;
+    char buf[65536];
+    size_t n;
+    while ((n = std::fread(buf, 1, sizeof buf, f)) > 0) { all.append(buf, n); if (all.size() > (64u << 20)) break; }
+    std::fclose(f);
+    size_t end = all.find("\n\n");
+    if (all.compare(0, sizeof kMagic - 1, kMagic) != 0 || end == std::string::npos) { r.error = "not a Disk Pro backup"; return r; }
+    std::string hdr = all.substr(0, end + 2);
+    auto get = [&](const char* k) {
+        size_t p = hdr.find(std::string("\n") + k + "=");
+        if (p == std::string::npos) return std::string();
+        p += std::strlen(k) + 2;
+        return hdr.substr(p, hdr.find('\n', p) - p);
+    };
+    r.scheme = get("scheme");
+    r.diskSize = std::strtoull(get("diskSize").c_str(), nullptr, 10);
+    r.headBytes = std::strtoull(get("headBytes").c_str(), nullptr, 10);
+    r.tailBytes = std::strtoull(get("tailBytes").c_str(), nullptr, 10);
+    if (r.headBytes > kArea || r.tailBytes > kArea || all.size() != hdr.size() + r.headBytes + r.tailBytes) { r.error = "size mismatch (truncated or corrupt)"; return r; }
+    Sha256 h; h.update(all.data() + hdr.size(), size_t(r.headBytes + r.tailBytes));
+    r.sha256 = h.finalHex();
+    if (r.sha256 != get("sha256")) { r.error = "SHA-256 mismatch (corrupt)"; return r; }
+    r.ok = true;
+    return r;
+}
+
 }  // namespace diskpro
+
+
+

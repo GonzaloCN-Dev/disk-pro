@@ -1,4 +1,4 @@
-#include <cstdio>
+﻿#include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -86,6 +86,24 @@ int main() {
     CHECK(hd.find("00000000  00 1f 3e") == 0);
     CHECK(hexDump(ms, data.size(), 16).empty());
 
+    {   // partition table backup
+        auto pb = (tmp / "diskpro_test.ptb").string(); std::filesystem::remove(pb);
+        auto br = backupPartitionTable(ms, pb);
+        CHECK(br.ok && br.headBytes == 1048576 && br.tailBytes == 1048576);
+        auto vr = verifyPartitionBackup(pb);
+        CHECK(vr.ok && vr.sha256 == br.sha256);
+        CHECK(!backupPartitionTable(ms, pb).ok);
+        { std::fstream x(pb, std::ios::in | std::ios::out | std::ios::binary); x.seekp(-10, std::ios::end); x.put(char(0x55)); x.put(char(0x66)); }
+        CHECK(!verifyPartitionBackup(pb).ok);
+        std::filesystem::resize_file(pb, std::filesystem::file_size(pb) - 5);
+        CHECK(!verifyPartitionBackup(pb).ok);
+        CHECK(!verifyPartitionBackup((tmp / "nonexistent.ptb").string()).ok);
+        BadSource bad(data, 0, 512);
+        CHECK(!backupPartitionTable(bad, (tmp / "x.ptb").string()).ok && !std::filesystem::exists(tmp / "x.ptb"));
+        std::filesystem::remove(pb);
+    }
+
     std::printf(failures ? "tools: %d failures\n" : "tools: all passed\n", failures);
     return failures ? 1 : 0;
 }
+

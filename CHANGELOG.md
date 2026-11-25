@@ -1,5 +1,17 @@
 ﻿# Changelog
 
+## 0.2.0 - first write operation (partition table restore, virtual disks only)
+### Added
+- `diskpro-restore`: restores a `.ptb` partition-table backup (first/last MiB) onto a VIRTUAL disk. Preview by default; applying needs the typed text `RESTORE DISK N`; writes are flushed and verified by reading back.
+- Write engine in `src/core/restore.*`, separate from the read-only code. Blocks: system disk, non-virtual disks, disks over 4 GiB, size or sector-size mismatch, disks with mounted volumes. Refuses tampered plans and out-of-range writes.
+- Backups now record the disk identifier. Backup creation and `ptverify` unchanged.
+- Unit tests (restore, safety rules, failing and lying sinks) and elevated VHD test (`tests/vhdx/run_restore_all.ps1`, GPT and MBR: passed).
+### Fixed
+- The 0.1.0 portable zip did not contain `diskpro-tools.exe`; it is now included, with `diskpro-restore.exe`.
+- The restore preview no longer lists ranges to write when the operation is blocked.
+### Not included yet
+Restore has no GUI. It does not restore partition contents. VHDX, 4096-byte sectors and physical removable disks are untested. Cloning, image restore, recovery, partition create/delete/resize and ATA SMART are still pending.
+
 ## 0.1.0 (unreleased candidate) – read-only MVP
 ### Added
 - MBR/GPT analyzer (CRC checks, backup header, EBR chain with loop guard, overlap/range checks, 512/4096 sectors, NTFS/FAT/exFAT detection, fixed-VHD footer handling).
@@ -10,9 +22,12 @@
 - CLI tools: `diskpro-cli` (image analysis), `diskpro-inventory`.
 - Unit tests (synthetic images, I/O failure injection) and VHD integration test (GPT and MBR).
 - Tools page (GUI) and `diskpro-tools` CLI, read-only: SHA-256, disk/file imaging (never overwrites, bad blocks zero-filled and counted), surface scan, hex viewer with sector navigation, progress and cancel.
+- Partition table backup (first/last MiB with SHA-256, never overwrites) and `ptverify` integrity check, in the Tools page and `diskpro-tools`. Restore is NOT implemented.
 - Portable zip.
 - Windows installer (Inno Setup 6, Spanish, per-user by default, optional all-users, bundles the VC++ runtime, uninstall offers to remove settings), same style as Rclone Lite and Db Pro. Not code-signed.
 ### Not included yet
 Write operations, cloning, image restore, recovery, ATA SMART attributes, VHDX-specific tests, sector 4096 on real devices.
+
+
 
 

@@ -2,7 +2,7 @@
 ; Compilar con: installer\build-installer.ps1
 
 #ifndef AppVersion
-  #define AppVersion "0.1.0"
+  #define AppVersion "0.2.0"
 #endif
 #define AppName "Disk Pro"
 #define AppPublisher "Gonzalo Cruz Núñez"
@@ -50,6 +50,7 @@ Source: "payload\{#AppExe}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "payload\diskpro-cli.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "payload\diskpro-inventory.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "payload\diskpro-tools.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "payload\diskpro-restore.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "payload\*.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "payload\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "payload\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
@@ -79,4 +80,5 @@ begin
               mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES then
       DelTree(ExpandConstant('{userappdata}\DiskPro'), True, True, True);
 end;
+
 

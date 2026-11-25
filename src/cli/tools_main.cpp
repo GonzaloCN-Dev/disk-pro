@@ -1,4 +1,4 @@
-// Disk Pro - MIT License - Copyright (c) Gonzalo Cruz Núñez
+﻿// Disk Pro - MIT License - Copyright (c) Gonzalo Cruz Núñez
 // diskpro-tools: read-only utilities. Source is a file or "disk:N" (physical drive, needs admin).
 #include <atomic>
 #include <cstdio>
@@ -37,11 +37,17 @@ int main(int argc, char** argv) {
     if (argc < 3) {
         std::fprintf(stderr,
                      "usage:\n  diskpro-tools hash <src>\n  diskpro-tools image <src> <out.img>   (never overwrites)\n"
-                     "  diskpro-tools scan <src>\n  diskpro-tools hex <src> <offset> [len]\n"
+                     "  diskpro-tools scan <src>\n  diskpro-tools ptbackup <src> <out.ptb>   (saves first/last MiB; never overwrites)\n  diskpro-tools ptverify <file.ptb>\n  diskpro-tools hex <src> <offset> [len]\n"
                      "src = file or disk:N (read-only; admin needed for disks)\n");
         return 2;
     }
     std::string cmd = argv[1];
+    if (cmd == "ptverify") {
+        auto r = verifyPartitionBackup(argv[2]);
+        if (!r.ok) { std::fprintf(stderr, "INVALID: %s\n", r.error.c_str()); return 1; }
+        std::printf("OK scheme=%s diskSize=%llu head=%llu tail=%llu sha256=%s\n", r.scheme.c_str(), (unsigned long long)r.diskSize, (unsigned long long)r.headBytes, (unsigned long long)r.tailBytes, r.sha256.c_str());
+        return 0;
+    }
     auto src = open(argv[2]);
     if (!src) { std::fprintf(stderr, "cannot open source (not found or access denied)\n"); return 1; }
     std::atomic<bool> cancel{false};
@@ -57,6 +63,13 @@ int main(int argc, char** argv) {
         if (!r.ok) { std::fprintf(stderr, "error: %s\n", r.error.c_str()); return 1; }
         std::printf("bytes=%llu badBlocks=%llu sha256=%s\n", (unsigned long long)r.bytes, (unsigned long long)r.badBlocks, r.sha256.c_str());
         return r.badBlocks ? 3 : 0;
+    }
+    if (cmd == "ptbackup") {
+        if (argc < 4) return 2;
+        auto r = backupPartitionTable(*src, argv[3]);
+        if (!r.ok) { std::fprintf(stderr, "error: %s\n", r.error.c_str()); return 1; }
+        std::printf("saved scheme=%s head=%llu tail=%llu sha256=%s\n", r.scheme.c_str(), (unsigned long long)r.headBytes, (unsigned long long)r.tailBytes, r.sha256.c_str());
+        return 0;
     }
     if (cmd == "scan") {
         auto r = surfaceScan(*src, cancel, prog);
@@ -76,3 +89,4 @@ int main(int argc, char** argv) {
     }
     return 2;
 }
+

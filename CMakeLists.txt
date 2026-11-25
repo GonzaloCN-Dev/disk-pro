@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(DiskPro VERSION 0.1.0 LANGUAGES CXX)
+project(DiskPro VERSION 0.2.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -13,7 +13,7 @@ else()
   add_compile_options(-Wall -Wextra)
 endif()
 
-add_library(diskpro_core STATIC src/core/layout.cpp src/core/map.cpp src/core/tools.cpp)
+add_library(diskpro_core STATIC src/core/layout.cpp src/core/map.cpp src/core/tools.cpp src/core/restore.cpp)
 target_include_directories(diskpro_core PUBLIC src/core)
 
 add_executable(diskpro-cli src/cli/main.cpp)
@@ -23,6 +23,8 @@ if(WIN32)
   add_library(diskpro_win STATIC src/platform/win/inventory.cpp src/platform/win/smart.cpp src/platform/win/device.cpp)
   target_include_directories(diskpro_win PUBLIC src/platform/win)
   target_link_libraries(diskpro_win PUBLIC diskpro_core)
+  add_executable(diskpro-restore src/cli/restore_main.cpp)
+  target_link_libraries(diskpro-restore PRIVATE diskpro_win)
   add_executable(diskpro-tools src/cli/tools_main.cpp)
   target_link_libraries(diskpro-tools PRIVATE diskpro_win)
   add_executable(diskpro-inventory src/cli/inventory_main.cpp)
@@ -55,6 +57,12 @@ add_test(NAME layout COMMAND diskpro-tests)
 add_executable(diskpro-tests-tools tests/test_tools.cpp)
 target_link_libraries(diskpro-tests-tools PRIVATE diskpro_core)
 add_test(NAME tools COMMAND diskpro-tests-tools)
+add_executable(diskpro-tests-restore tests/test_restore.cpp)
+target_link_libraries(diskpro-tests-restore PRIVATE diskpro_core)
+add_test(NAME restore COMMAND diskpro-tests-restore)
+
+
+
 
 
 

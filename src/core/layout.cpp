@@ -1,5 +1,8 @@
-// Disk Pro - MIT License - Copyright (c) Gonzalo Cruz Núñez
+﻿// Disk Pro - MIT License - Copyright (c) Gonzalo Cruz Núñez
 #include "layout.h"
+#ifdef _WIN32
+#include <share.h>
+#endif
 
 #include <algorithm>
 #include <array>
@@ -261,7 +264,7 @@ bool MemorySource::read(uint64_t off, void* buf, size_t len) const {
 FileSource::FileSource(const std::string& path) {
     FILE* f = nullptr;
 #ifdef _WIN32
-    fopen_s(&f, path.c_str(), "rb");  // read-only by construction
+    f = _fsopen(path.c_str(), "rb", _SH_DENYNO);  // read-only by construction; others may write (readback of restores)
 #else
     f = std::fopen(path.c_str(), "rb");
 #endif
@@ -350,3 +353,4 @@ std::string humanSize(uint64_t bytes) {
 }
 
 }  // namespace diskpro
+
