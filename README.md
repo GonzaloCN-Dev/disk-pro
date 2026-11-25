@@ -1,29 +1,94 @@
-﻿# Disk Pro
+﻿<div align="center">
 
-**ES** – Gestor de discos y particiones libre por Gonzalo Cruz Núñez / [GCN Dev](https://dev.gonzalocn.com/). Versión 0.1.0: **solo lectura** (no modifica discos).
-**EN** – Free disk and partition manager by Gonzalo Cruz Núñez / GCN Dev. Version 0.1.0: **read-only** (never modifies disks).
+# Disk Pro
 
-## Funciones / Features
-- Inventario de discos físicos y virtuales, GPT/MBR, particiones, volúmenes, sistema de archivos, disco de sistema.
-- Salud NVMe (SMART) cuando el dispositivo lo expone; si no, "n/d".
-- Mapa gráfico de particiones y diagnóstico (solapes, rangos, alineación, CRC GPT).
-- Herramientas (solo lectura): SHA-256, crear imagen de disco/archivo, análisis de superficie, visor hex (`diskpro-tools`, y pestaña Herramientas).
-- Análisis de imágenes (`diskpro-cli imagen.vhd`), sectores 512/4096.
-- Tema claro/oscuro/sistema, español/inglés, densidad, teclado (↑/↓ en la lista), sin telemetría.
+### Un inspector de discos y particiones gratuito, de código abierto y para Windows.
 
-## No incluido todavía / Not yet
-Crear, redimensionar, mover, borrar particiones; clonar; restaurar imágenes; recuperación; firma de código del instalador; atributos SMART ATA.
+[![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?logo=windows)](#requisitos)
+[![C++20](https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus)](#compilar-desde-el-código)
+[![Slint](https://img.shields.io/badge/UI-Slint-6B4EFF)](https://slint.dev)
+[![Licencia MIT](https://img.shields.io/badge/Licencia-MIT-green.svg)](LICENSE)
+[![Solo lectura](https://img.shields.io/badge/modo-solo%20lectura-orange)](#estado-y-límites)
+[![Sin telemetría](https://img.shields.io/badge/telemetr%C3%ADa-ninguna-lightgrey)](#datos-y-privacidad)
 
-## Compilar / Build
-Visual Studio 2022 Build Tools (C++, CMake, Ninja) y Slint 1.19.1 C++ en `.tools\slint` (ver `docs/ARCHITECTURE.md`).
+**Mira tus discos. Entiende tus particiones. Sin tocar nada.**
+
+[Descargar para Windows](https://github.com/GonzaloCN-Dev/disk-pro/releases/latest) ·
+[Funciones](#funciones) · [Instalar](#instalación) · [Informar de un problema](https://github.com/GonzaloCN-Dev/disk-pro/issues)
+
+</div>
+
+Disk Pro es una aplicación de escritorio en español e inglés para inspeccionar discos físicos y virtuales, sus tablas de particiones y su salud. Está escrita en C++ con Slint: sin Electron, sin WebView y sin servidores. Desarrollado por **Gonzalo Cruz Núñez** ([GCN Dev](https://dev.gonzalocn.com/)).
+
+> **Estado: 0.1.0, solo lectura.** Esta versión **no modifica discos**: no crea, borra, formatea ni redimensiona particiones, ni clona, ni recupera archivos. Esas funciones están pendientes y no se simulan. Consulta [Estado y límites](#estado-y-límites).
+
+*EN – Disk Pro is a free, open-source, native Windows disk inspector (GPT/MBR, partitions, NVMe health, imaging, hex viewer). Version 0.1.0 is read-only: it never modifies disks.*
+
+## Capturas
+
+| Discos y particiones (oscuro) | Tema claro |
+| --- | --- |
+| ![Lista de discos, mapa de particiones, tabla y salud NVMe en tema oscuro](docs/screenshots/discos-oscuro.png) | ![Misma vista en tema claro](docs/screenshots/discos-claro.png) |
+
+| Herramientas: SHA-256 | Herramientas: visor hexadecimal |
+| --- | --- |
+| ![Cálculo de SHA-256 con barra de progreso](docs/screenshots/hash.png) | ![Visor hexadecimal con navegación por sectores](docs/screenshots/hex.png) |
+
+| Interfaz en inglés |
+| --- |
+| ![Interfaz en inglés](docs/screenshots/discos-en.png) |
+
+## Funciones
+
+| Función | Qué puedes hacer |
+| --- | --- |
+| **Inventario de discos** | Discos físicos y virtuales con modelo, tamaño, bus (NVMe, SATA, USB…), tabla GPT/MBR, tamaño de sector, letras de unidad y sistema de archivos. Marca el disco del sistema. El número de serie se muestra enmascarado. |
+| **Mapa de particiones** | Barra gráfica con particiones y espacio libre, y tabla de particiones. |
+| **Diagnóstico** | Detecta solapes, rangos fuera del disco, desalineación y errores de CRC en GPT. |
+| **Salud** | Datos NVMe (temperatura, reserva, desgaste, horas) y estado genérico de fallo previsto. Si el dispositivo no lo expone, indica «n/d». |
+| **SHA-256** | Hash de un disco o de un archivo de imagen, con progreso y cancelación. |
+| **Crear imagen** | Copia un disco o archivo a una imagen. Nunca sobrescribe un archivo existente; los bloques ilegibles se rellenan con ceros y se cuentan. |
+| **Análisis de superficie** | Lee todo el origen en solo lectura y lista los bloques ilegibles y la velocidad. |
+| **Visor hexadecimal** | Navega por offset y por sectores, con columna ASCII. |
+| **Análisis de imágenes** | `diskpro-cli imagen.vhd` analiza MBR/GPT en un archivo (512 y 4096 bytes por sector, pie de VHD fijo). |
+| **Interfaz** | Tema claro, oscuro o del sistema; español e inglés; tres densidades; navegación con teclado; sin bloquear la ventana mientras se lee. |
+
+Leer discos físicos con las herramientas requiere ejecutar Disk Pro como administrador. El inventario no lo necesita.
+
+## Estado y límites
+
+- **No incluido todavía:** crear, borrar, formatear, redimensionar o mover particiones; clonar; restaurar imágenes; recuperación de archivos; discos virtuales (montar/convertir); atributos SMART de discos ATA.
+- **Probado:** pruebas unitarias con imágenes sintéticas (GPT, MBR, 512/4096, corrupción, errores de lectura inyectados), SHA-256 con vectores conocidos, y pruebas con un VHD desechable (GPT y MBR).
+- **Sin probar:** VHDX, sectores de 4096 bytes en dispositivos reales, y las herramientas de imagen/superficie sobre un disco físico.
+- El instalador **no está firmado**: Windows SmartScreen puede avisar. Comprueba el SHA-256 de la descarga.
+
+## Requisitos
+
+Windows 10 u 11 de 64 bits. El instalador incluye el runtime de Visual C++; el zip portable requiere el [Visual C++ Redistributable x64](https://aka.ms/vs/17/release/vc_redist.x64.exe).
+
+## Instalación
+
+Descarga `DiskPro-Setup-0.1.0.exe` (instalador, por usuario, sin administrador) o `DiskPro-0.1.0-win64-portable.zip` desde [Releases](https://github.com/GonzaloCN-Dev/disk-pro/releases/latest). Los hashes están en `SHA256SUMS.txt`.
+
+## Compilar desde el código
+
+Requisitos: Visual Studio 2022 Build Tools (C++, CMake, Ninja) y el SDK C++ de Slint 1.19.1 en `.tools\slint`.
+
 ```
-build.cmd      # compila y ejecuta pruebas
+build.cmd      # compila y ejecuta las pruebas
 package.cmd    # genera dist\DiskPro-0.1.0-win64-portable.zip
-powershell -File installer\build-installer.ps1   # genera dist\DiskPro-Setup-0.1.0.exe (requiere Inno Setup 6)
+powershell -File installer\build-installer.ps1   # instalador (requiere Inno Setup 6)
 ```
-Pruebas con VHD (PowerShell **administrador**; usa solo un VHD desechable en %TEMP%): `powershell -ExecutionPolicy Bypass -File tests\vhdx\run_all.ps1`
 
-## Licencia / License
-Código propio MIT (`LICENSE`). Slint se usa bajo su licencia Royalty-free 2.0: ver `THIRD_PARTY_NOTICES.md`. El instalador incluye el runtime de VC++; el portable requiere el VC++ Redistributable x64.
+Pruebas con VHD (PowerShell **como administrador**; solo usa un VHD desechable en `%TEMP%` y se niega a tocar otros discos):
+`powershell -ExecutionPolicy Bypass -File tests\vhdx\run_all.ps1`
 
+Arquitectura: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
+## Datos y privacidad
+
+Sin telemetría, sin cuentas y sin conexión a Internet. Los ajustes (tema, idioma, densidad) se guardan en `%APPDATA%\DiskPro\settings.ini`.
+
+## Licencia
+
+Código propio bajo licencia MIT ([`LICENSE`](LICENSE)). Slint se usa bajo su licencia Royalty-free 2.0 y no queda cubierto por la MIT: consulta [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). Proyecto independiente, sin afiliación con otros gestores de discos.
