@@ -1,0 +1,382 @@
+﻿// Disk Pro - MIT License - Copyright (c) Gonzalo Cruz Núñez
+import { Button, ComboBox, LineEdit, ListView, ScrollView, AboutSlint, Palette } from "std-widgets.slint";
+
+export struct DiskRow { name: string, detail: string, size: string, style: string, tag: string }
+export struct PartRow { num: string, type: string, fs: string, size: string, offset: string, volume: string }
+export struct SegRow { label: string, size: string, start: float, fraction: float, free: bool }
+export struct DiagRow { severity: int, text: string }
+
+export global Tr {
+    in property <string> app-title;
+    in property <string> disks;
+    in property <string> partitions;
+    in property <string> diagnostics;
+    in property <string> filter-hint;
+    in property <string> refresh;
+    in property <string> theme;
+    in property <string> language;
+    in property <string> density;
+    in property <string> about;
+    in property <string> close;
+    in property <string> loading;
+    in property <string> empty;
+    in property <string> error-prefix;
+    in property <string> read-only;
+    in property <string> health;
+    in property <string> no-diag;
+    in property <string> col-num;
+    in property <string> col-type;
+    in property <string> col-fs;
+    in property <string> col-size;
+    in property <string> col-offset;
+    in property <string> col-volume;
+    in property <string> free-space;
+    in property <string> copyright;
+    in property <string> select-disk;
+    in property <[string]> theme-options;
+    in property <[string]> density-options;
+    in property <string> tools;
+    in property <string> t-hash;
+    in property <string> t-image;
+    in property <string> t-scan;
+    in property <string> t-hex;
+    in property <string> t-open;
+    in property <string> t-cancel;
+    in property <string> t-prev;
+    in property <string> t-next;
+    in property <string> t-offset;
+    in property <string> t-back;
+    in property <string> t-note;
+}
+
+component Section inherits Text {
+    font-size: 13px;
+    font-weight: 700;
+    color: Palette.foreground;
+}
+
+component Cell inherits Text {
+    overflow: elide;
+    vertical-alignment: center;
+    color: Palette.foreground;
+}
+
+export component MainWindow inherits Window {
+    title: Tr.app-title;
+    min-width: 760px;
+    min-height: 520px;
+    preferred-width: 1080px;
+    preferred-height: 700px;
+    background: Palette.background;
+
+    in property <[DiskRow]> disks;
+    in property <[PartRow]> parts;
+    in property <[SegRow]> segments;
+    in property <[DiagRow]> diags;
+    in property <string> health-text;
+    in property <bool> loading: true;
+    in-out property <bool> show-tools: false;
+    in property <string> source-label;
+    in property <bool> tool-busy: false;
+    in property <float> tool-progress: 0;
+    in property <string> tool-status;
+    in property <string> tool-output;
+    in-out property <string> hex-offset: "0";
+    in property <string> error-text;
+    in-out property <int> selected: -1;
+    in-out property <string> filter-text;
+    in-out property <bool> show-about: false;
+    in property <int> theme-index: 0;
+    in property <int> density-index: 1;
+    in property <int> language-index: 0;
+    property <length> row-h: [28px, 36px, 46px][density-index];
+    changed theme-index => {
+        Palette.color-scheme = theme-index == 1 ? ColorScheme.light : theme-index == 2 ? ColorScheme.dark : ColorScheme.unknown;
+    }
+
+    callback refresh();
+    callback tool-run(string, string);
+    callback tool-open-file();
+    callback tool-cancel();
+    callback disk-selected(int);
+    callback filter-changed(string);
+    callback theme-changed(int);
+    callback density-changed(int);
+    callback language-changed(int);
+
+    VerticalLayout {
+        padding: 12px;
+        spacing: 10px;
+
+        HorizontalLayout {
+            spacing: 8px;
+            LineEdit {
+                placeholder-text: Tr.filter-hint;
+                accessible-label: Tr.filter-hint;
+                edited(t) => { root.filter-changed(t); }
+            }
+            Button {
+                text: Tr.refresh;
+                enabled: !root.loading;
+                clicked => { root.refresh(); }
+            }
+            ComboBox {
+                model: Tr.theme-options;
+                current-index: root.theme-index;
+                accessible-label: Tr.theme;
+                selected(_) => { root.theme-changed(self.current-index); }
+            }
+            ComboBox {
+                model: Tr.density-options;
+                current-index: root.density-index;
+                accessible-label: Tr.density;
+                selected(_) => { root.density-changed(self.current-index); }
+            }
+            ComboBox {
+                model: ["Español", "English"];
+                current-index: root.language-index;
+                accessible-label: Tr.language;
+                selected(_) => { root.language-changed(self.current-index); }
+            }
+            Button {
+                text: root.show-tools ? Tr.t-back : Tr.tools;
+                clicked => { root.show-tools = !root.show-tools; }
+            }
+            Button {
+                text: Tr.about;
+                clicked => { root.show-about = true; }
+            }
+        }
+
+        Text {
+            text: Tr.read-only;
+            color: Palette.foreground.with-alpha(0.7);
+            font-size: 11px;
+        }
+
+        if root.loading: Text {
+            text: Tr.loading;
+            color: Palette.foreground;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            accessible-role: text;
+        }
+        if !root.loading && root.error-text != "": Text {
+            text: Tr.error-prefix + root.error-text;
+            color: #d9534f;
+            wrap: word-wrap;
+        }
+        if !root.loading && root.error-text == "" && root.disks.length == 0: Text {
+            text: Tr.empty;
+            color: Palette.foreground;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+
+        if !root.loading && root.disks.length > 0: HorizontalLayout {
+            spacing: 12px;
+
+            VerticalLayout {
+                width: 320px;
+                spacing: 6px;
+                Section { text: Tr.disks; }
+                Rectangle {
+                    border-width: 1px;
+                    border-color: Palette.border;
+                    border-radius: 4px;
+                    clip: true;
+                    fs := FocusScope {
+                        key-pressed(e) => {
+                            if (e.text == Key.DownArrow && root.selected < root.disks.length - 1) {
+                                root.disk-selected(root.selected + 1);
+                                return accept;
+                            }
+                            if (e.text == Key.UpArrow && root.selected > 0) {
+                                root.disk-selected(root.selected - 1);
+                                return accept;
+                            }
+                            reject
+                        }
+                        ListView {
+                            for d[i] in root.disks: Rectangle {
+                                height: root.row-h * 1.6;
+                                background: i == root.selected ? Palette.accent-background : transparent;
+                                accessible-role: list-item;
+                                accessible-label: d.name + ", " + d.size + ", " + d.style;
+                                accessible-item-selectable: true;
+                                accessible-item-selected: i == root.selected;
+                                VerticalLayout {
+                                    padding: 6px;
+                                    Text {
+                                        text: d.name + (d.tag != "" ? "  [" + d.tag + "]" : "");
+                                        overflow: elide;
+                                        color: i == root.selected ? Palette.accent-foreground : Palette.foreground;
+                                        font-weight: 600;
+                                    }
+                                    Text {
+                                        text: d.size + " · " + d.style + " · " + d.detail;
+                                        overflow: elide;
+                                        font-size: 11px;
+                                        color: i == root.selected ? Palette.accent-foreground : Palette.foreground.with-alpha(0.75);
+                                    }
+                                }
+                                TouchArea {
+                                    clicked => { fs.focus(); root.disk-selected(i); }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            VerticalLayout {
+                spacing: 8px;
+                Section { text: root.show-tools ? Tr.tools : Tr.partitions; }
+
+                if root.selected < 0 && !root.show-tools: Text { text: Tr.select-disk; color: Palette.foreground; }
+
+                if root.selected >= 0 && !root.show-tools: Rectangle {
+                    height: 54px;
+                    accessible-role: image;
+                    accessible-label: Tr.partitions;
+                    for s in root.segments: Rectangle {
+                        x: parent.width * s.start;
+                        width: max(parent.width * s.fraction - 2px, 1px);
+                        height: parent.height;
+                        border-radius: 4px;
+                        background: s.free ? Palette.alternate-background : Palette.accent-background.with-alpha(0.85);
+                        border-width: 1px;
+                        border-color: Palette.border;
+                        clip: true;
+                        accessible-role: text;
+                        accessible-label: s.label + " " + s.size;
+                        VerticalLayout {
+                            padding: 4px;
+                            Text {
+                                text: s.label;
+                                overflow: elide;
+                                font-size: 11px;
+                                font-weight: 600;
+                                color: s.free ? Palette.foreground : Palette.accent-foreground;
+                            }
+                            Text {
+                                text: s.size;
+                                overflow: elide;
+                                font-size: 10px;
+                                color: s.free ? Palette.foreground.with-alpha(0.7) : Palette.accent-foreground;
+                            }
+                        }
+                    }
+                }
+
+                if root.selected >= 0 && !root.show-tools: Rectangle {
+                    border-width: 1px;
+                    border-color: Palette.border;
+                    border-radius: 4px;
+                    VerticalLayout {
+                        HorizontalLayout {
+                            height: root.row-h;
+                            padding-left: 6px;
+                            spacing: 6px;
+                            Cell { text: Tr.col-num; width: 36px; font-weight: 700; }
+                            Cell { text: Tr.col-type; width: 140px; font-weight: 700; }
+                            Cell { text: Tr.col-fs; width: 70px; font-weight: 700; }
+                            Cell { text: Tr.col-size; width: 90px; font-weight: 700; }
+                            Cell { text: Tr.col-offset; width: 110px; font-weight: 700; }
+                            Cell { text: Tr.col-volume; font-weight: 700; }
+                        }
+                        ListView {
+                            for p in root.parts: Rectangle {
+                                height: root.row-h;
+                                HorizontalLayout {
+                                    padding-left: 6px;
+                                    spacing: 6px;
+                                    Cell { text: p.num; width: 36px; }
+                                    Cell { text: p.type; width: 140px; }
+                                    Cell { text: p.fs; width: 70px; }
+                                    Cell { text: p.size; width: 90px; }
+                                    Cell { text: p.offset; width: 110px; }
+                                    Cell { text: p.volume; }
+                                }
+                            }
+                        }
+                    }
+                }
+
+
+                if root.show-tools: VerticalLayout {
+                    spacing: 8px;
+                    Section { text: root.source-label; }
+                    Text { text: Tr.t-note; color: Palette.foreground.with-alpha(0.7); font-size: 11px; wrap: word-wrap; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Button { text: Tr.t-open; enabled: !root.tool-busy; clicked => { root.tool-open-file(); } }
+                        Button { text: Tr.t-hash; enabled: !root.tool-busy; clicked => { root.tool-run("hash", ""); } }
+                        Button { text: Tr.t-image; enabled: !root.tool-busy; clicked => { root.tool-run("image", ""); } }
+                        Button { text: Tr.t-scan; enabled: !root.tool-busy; clicked => { root.tool-run("scan", ""); } }
+                        Button { text: Tr.t-cancel; enabled: root.tool-busy; clicked => { root.tool-cancel(); } }
+                    }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text { text: Tr.t-offset; color: Palette.foreground; vertical-alignment: center; }
+                        LineEdit { width: 160px; text <=> root.hex-offset; accessible-label: Tr.t-offset; }
+                        Button { text: Tr.t-hex; enabled: !root.tool-busy; clicked => { root.tool-run("hex", root.hex-offset); } }
+                        Button { text: Tr.t-prev; enabled: !root.tool-busy; clicked => { root.tool-run("hexprev", root.hex-offset); } }
+                        Button { text: Tr.t-next; enabled: !root.tool-busy; clicked => { root.tool-run("hexnext", root.hex-offset); } }
+                    }
+                    Rectangle {
+                        height: 14px;
+                        border-width: 1px; border-color: Palette.border;
+                        accessible-role: progress-indicator;
+                        accessible-value: root.tool-status;
+                        Rectangle { x: 0; width: parent.width * root.tool-progress; background: Palette.accent-background; }
+                    }
+                    Text { text: root.tool-status; color: Palette.foreground; wrap: word-wrap; }
+                    Rectangle {
+                        border-width: 1px; border-color: Palette.border; clip: true;
+                        ScrollView {
+                            Text { x: 0; horizontal-alignment: left; text: root.tool-output; font-family: "Consolas"; font-size: 12px; color: Palette.foreground; }
+                        }
+                    }
+                }
+                if root.selected >= 0 && !root.show-tools: VerticalLayout {
+                    spacing: 4px;
+                    Section { text: Tr.health + ": " + root.health-text; }
+                    Section { text: Tr.diagnostics; }
+                    if root.diags.length == 0: Text { text: Tr.no-diag; color: Palette.foreground; }
+                    for g in root.diags: Text {
+                        text: (g.severity == 2 ? "✖ " : g.severity == 1 ? "⚠ " : "• ") + g.text;
+                        color: g.severity == 2 ? #d9534f : g.severity == 1 ? #e0a030 : Palette.foreground;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+        }
+    }
+
+    if root.show-about: Rectangle {
+        background: #000000a0;
+        TouchArea { }
+        Rectangle {
+            width: 380px;
+            height: 280px;
+            background: Palette.background;
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: Palette.border;
+            VerticalLayout {
+                padding: 16px;
+                spacing: 8px;
+                Text { text: Tr.app-title + " 0.1.0"; font-size: 18px; font-weight: 700; color: Palette.foreground; }
+                Text { text: Tr.copyright; color: Palette.foreground; wrap: word-wrap; }
+                Text { text: "MIT · dev.gonzalocn.com"; color: Palette.foreground; }
+                AboutSlint { }
+                Button { text: Tr.close; clicked => { root.show-about = false; } }
+            }
+        }
+    }
+}
+
+
+
+
