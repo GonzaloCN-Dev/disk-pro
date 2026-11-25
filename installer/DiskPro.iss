@@ -2,7 +2,7 @@
 ; Compilar con: installer\build-installer.ps1
 
 #ifndef AppVersion
-  #define AppVersion "0.2.0"
+  #define AppVersion "0.2.1"
 #endif
 #define AppName "Disk Pro"
 #define AppPublisher "Gonzalo Cruz Núñez"
@@ -80,5 +80,6 @@ begin
               mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES then
       DelTree(ExpandConstant('{userappdata}\DiskPro'), True, True, True);
 end;
+
 
 

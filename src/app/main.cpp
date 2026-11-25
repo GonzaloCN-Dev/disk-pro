@@ -18,6 +18,7 @@
 #include "smart.h"
 #include "device.h"
 #include "tools.h"
+#include "restore.h"
 #include <commdlg.h>
 #include <cstdlib>
 #include <chrono>
@@ -34,13 +35,13 @@ struct Strings {
 
 const Strings kEs = {"Disk Pro", "Discos", "Particiones", "Diagnóstico (solo lectura)", "Filtrar discos…", "Actualizar", "Tema",
                      "Idioma", "Densidad", "Acerca de", "Cerrar", "Cargando discos…", "No se encontraron discos.", "Error: ",
-                     "Modo solo lectura: esta versión no modifica discos.", "Salud", "Sin incidencias detectadas.", "N.º",
+                     "Solo lectura, salvo «Restaurar tabla», que escribe únicamente en discos virtuales (VHD).", "Salud", "Sin incidencias detectadas.", "N.º",
                      "Tipo", "Sistema", "Tamaño", "Desplazamiento", "Volumen", "Libre",
                      "© Gonzalo Cruz Núñez · GCN Dev. Software libre bajo licencia MIT.", "Selecciona un disco.",
                      {"Sistema", "Claro", "Oscuro"}, {"Compacta", "Normal", "Amplia"}};
 const Strings kEn = {"Disk Pro", "Disks", "Partitions", "Diagnostics (read-only)", "Filter disks…", "Refresh", "Theme",
                      "Language", "Density", "About", "Close", "Loading disks…", "No disks found.", "Error: ",
-                     "Read-only mode: this version does not modify disks.", "Health", "No issues found.", "No.",
+                     "Read-only, except 'Restore table', which only writes to virtual disks (VHD).", "Health", "No issues found.", "No.",
                      "Type", "File system", "Size", "Offset", "Volume", "Free",
                      "© Gonzalo Cruz Núñez · GCN Dev. Free software under the MIT license.", "Select a disk.",
                      {"System", "Light", "Dark"}, {"Compact", "Normal", "Comfortable"}};
@@ -51,13 +52,13 @@ struct ToolStr {
 };
 const ToolStr kToolEs = {"Herramientas", "SHA-256", "Crear imagen…", "Analizar superficie", "Ver hex", "Abrir archivo…", "Cancelar",
                          "◀ Anterior", "Siguiente ▶", "Offset:", "Volver a discos",
-                         "Solo lectura: el origen nunca se modifica. Los discos físicos requieren ejecutar Disk Pro como administrador; los archivos de imagen no.",
+                         "Solo lectura: el origen nunca se modifica (salvo restaurar la tabla en un VHD). Los discos físicos requieren ejecutar Disk Pro como administrador; los archivos de imagen no.",
                          "Origen: archivo ", "Selecciona un disco o abre un archivo.",
                          "No se pudo abrir el origen (¿falta ejecutar como administrador?).", "Cancelado.", "Terminado.",
                          "bloques ilegibles: ", "El archivo de salida ya existe; elige otro nombre.", "Origen: disco", "MB/s"};
 const ToolStr kToolEn = {"Tools", "SHA-256", "Create image…", "Surface scan", "View hex", "Open file…", "Cancel",
                          "◀ Previous", "Next ▶", "Offset:", "Back to disks",
-                         "Read-only: the source is never modified. Physical disks need Disk Pro to run as administrator; image files do not.",
+                         "Read-only: the source is never modified (except restoring the table onto a VHD). Physical disks need Disk Pro to run as administrator; image files do not.",
                          "Source: file ", "Select a disk or open a file.", "Cannot open the source (run as administrator?).",
                          "Cancelled.", "Finished.", "unreadable blocks: ", "Output file already exists; choose another name.",
                          "Source: disk", "MB/s"};
@@ -224,6 +225,9 @@ int main(int argc, char** argv) {
         g.set_tools(S(s.tools)); g.set_t_hash(S(s.hash)); g.set_t_image(S(s.image)); g.set_t_scan(S(s.scan));
         g.set_t_hex(S(s.hex)); g.set_t_open(S(s.open)); g.set_t_cancel(S(s.cancel)); g.set_t_prev(S(s.prev));
         g.set_t_next(S(s.next)); g.set_t_offset(S(s.offset)); g.set_t_back(S(s.back)); g.set_t_ptb(S(lang == 1 ? "Back up partition table…" : "Copia de la tabla de particiones…")); g.set_t_note(S(s.note));
+        g.set_t_restore(S(lang == 1 ? "Restore table (VHD only)…" : "Restaurar tabla (solo VHD)…"));
+        g.set_t_apply(S(lang == 1 ? "Apply restore" : "Aplicar restauración"));
+        g.set_t_confirm_hint(S(lang == 1 ? "Confirmation text" : "Texto de confirmación"));
     };
     (void)ts;
     toolStrings();
@@ -248,6 +252,54 @@ int main(int argc, char** argv) {
         if (!p.empty()) { *filePath = p; sourceLabel(); }
     });
     ui->on_tool_cancel([cancelFlag]() { cancelFlag->store(true); });
+
+    struct Pending { BackupData bak; RestorePlan plan; int disk = -1; };
+    auto pending = std::make_shared<Pending>();
+    auto clearPending = [ui, pending]() { *pending = Pending{}; ui->set_restore_ready(false); ui->set_restore_confirm(S("")); };
+    ui->on_restore_preview([ui, st, selected, filePath, pending, clearPending, &lang]() {
+        const bool en = lang == 1;
+        clearPending();
+        if (!filePath->empty() || *selected < 0 || *selected >= int(st->visible.size())) {
+            ui->set_tool_status(S(en ? "Select a disk in the list first (not a file)." : "Selecciona primero un disco de la lista (no un archivo)."));
+            return;
+        }
+        std::string p = pickFile(false, L"ptb");
+        if (p.empty()) return;
+        const win::DiskInfo& disk = st->disks[st->visible[*selected]];
+        auto bak = loadPartitionBackup(p);
+        DeviceSource src{static_cast<int>(disk.number)};
+        if (!src.ok()) { ui->set_tool_status(S(en ? "Cannot open the disk (run as administrator)." : "No se puede abrir el disco (ejecuta como administrador).")); return; }
+        auto cur = analyze(src);
+        TargetFacts t;
+        t.number = disk.number; t.size = src.size(); t.sectorSize = disk.logicalSector ? disk.logicalSector : 512;
+        t.isSystemDisk = disk.isSystemDisk; t.isVirtual = disk.isVirtual;
+        t.currentScheme = schemeName(cur.scheme); t.currentDiskId = cur.diskId;
+        auto plan = planRestore(bak, t);
+        if (!disk.volumes.empty()) { plan.blockers.push_back("The disk has mounted volumes (drive letters): unmount/clear them first."); plan.allowed = false; plan.ranges.clear(); }
+        std::string o = "=== PREVIEW ===\nDisk " + std::to_string(disk.number) + "  " + disk.vendor + " " + disk.product + "  " + disk.busType + "  " + humanSize(t.size) +
+                        "\nCurrent: " + t.currentScheme + " (" + std::to_string(disk.partitions.size()) + ")\nBackup: " + bak.scheme + " " + bak.diskId + "\n";
+        for (auto& r : plan.ranges) o += "WILL WRITE: offset " + std::to_string(r.offset) + ", " + std::to_string(r.length) + " bytes\n";
+        for (auto& w : plan.warnings) o += "WARNING: " + w + "\n";
+        for (auto& b : plan.blockers) o += "BLOCKED: " + b + "\n";
+        ui->set_tool_output(S(o));
+        if (!plan.allowed) { ui->set_tool_status(S(en ? "Not allowed. Nothing will be written." : "No permitido. No se escribirá nada.")); return; }
+        pending->bak = std::move(bak); pending->plan = plan; pending->disk = int(disk.number);
+        ui->set_restore_ready(true);
+        ui->set_tool_status(S((en ? "Type exactly: " : "Escribe exactamente: ") + plan.token));
+    });
+    ui->on_restore_apply([ui, st, selected, filePath, pending, clearPending, &lang](slint::SharedString typed) {
+        const bool en = lang == 1;
+        if (pending->disk < 0) return;
+        DeviceSource rb{pending->disk};
+        DeviceSink sink{pending->disk};
+        if (!rb.ok() || !sink.ok()) { ui->set_tool_status(S(en ? "Cannot open the disk for writing (administrator?)." : "No se puede abrir el disco para escribir (¿administrador?).")); return; }
+        auto res = applyRestore(pending->bak, pending->plan, std::string(typed), sink, rb);
+        sink.refreshLayout();
+        std::string msg = res.ok ? (en ? "Restored, flushed and verified by reading back." : "Restaurado, vaciado y verificado releyendo.")
+                                 : (en ? "FAILED: " : "ERROR: ") + res.error + (res.written ? (en ? " (the disk may be partially written)" : " (el disco puede haber quedado a medias)") : "");
+        ui->set_tool_status(S(msg));
+        if (res.ok || res.written) clearPending();
+    });
     ui->on_tool_run([ui, st, selected, filePath, cancelFlag, toolBusy, &lang](slint::SharedString cmdS, slint::SharedString arg) {
         const ToolStr& s = lang == 1 ? kToolEn : kToolEs;
         std::string cmd(cmdS), a(arg);
@@ -341,6 +393,9 @@ int main(int argc, char** argv) {
     ui->run();
     return 0;
 }
+
+
+
 
 
 
