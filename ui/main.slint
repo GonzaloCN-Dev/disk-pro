@@ -1,5 +1,5 @@
 ﻿// Disk Pro - MIT License - Copyright (c) Gonzalo Cruz Núñez
-import { Button, ComboBox, LineEdit, ListView, ScrollView, AboutSlint, Palette } from "std-widgets.slint";
+import { Button, CheckBox, ComboBox, LineEdit, ListView, ScrollView, AboutSlint, Palette } from "std-widgets.slint";
 
 export struct DiskRow { name: string, detail: string, size: string, style: string, tag: string }
 export struct PartRow { num: string, type: string, fs: string, size: string, offset: string, volume: string }
@@ -47,6 +47,13 @@ export global Tr {
     in property <string> t-offset;
     in property <string> t-back;
     in property <string> t-note;
+    in property <string> version;
+    in property <string> settings;
+    in property <string> s-check;
+    in property <string> s-install;
+    in property <string> s-auto;
+    in property <string> s-privacy;
+    in property <string> s-notes;
     in property <string> t-ptb;
     in property <string> t-restore;
     in property <string> t-apply;
@@ -94,6 +101,16 @@ export component MainWindow inherits Window {
     in-out property <int> selected: -1;
     in-out property <string> filter-text;
     in-out property <bool> show-about: false;
+    in-out property <bool> show-settings: false;
+    in property <string> upd-text;
+    in property <string> upd-notes;
+    in property <float> upd-progress: 0;
+    in property <bool> upd-can-install: false;
+    in property <bool> upd-busy: false;
+    in property <bool> auto-update: false;
+    callback check-updates();
+    callback start-update();
+    callback auto-update-changed(bool);
     in property <int> theme-index: 0;
     in property <int> density-index: 1;
     in property <int> language-index: 0;
@@ -153,6 +170,10 @@ export component MainWindow inherits Window {
             Button {
                 text: root.show-tools ? Tr.t-back : Tr.tools;
                 clicked => { root.show-tools = !root.show-tools; }
+            }
+            Button {
+                text: Tr.settings;
+                clicked => { root.show-settings = true; }
             }
             Button {
                 text: Tr.about;
@@ -373,6 +394,52 @@ export component MainWindow inherits Window {
         }
     }
 
+    if root.show-settings: Rectangle {
+        background: #000000a0;
+        TouchArea { }
+        Rectangle {
+            width: min(520px, root.width - 40px);
+            height: min(460px, root.height - 40px);
+            background: Palette.background;
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: Palette.border;
+            VerticalLayout {
+                padding: 16px;
+                spacing: 8px;
+                Text { text: Tr.settings; font-size: 18px; font-weight: 700; color: Palette.foreground; }
+                Text { text: Tr.app-title + " " + Tr.version; color: Palette.foreground; }
+                CheckBox {
+                    text: Tr.s-auto;
+                    checked: root.auto-update;
+                    toggled => { root.auto-update-changed(self.checked); }
+                }
+                Text { text: Tr.s-privacy; color: Palette.foreground.with-alpha(0.7); font-size: 11px; wrap: word-wrap; }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Button { text: Tr.s-check; enabled: !root.upd-busy; clicked => { root.check-updates(); } }
+                    Button { text: Tr.s-install; enabled: root.upd-can-install && !root.upd-busy; clicked => { root.start-update(); } }
+                }
+                Rectangle {
+                    height: 14px;
+                    border-width: 1px; border-color: Palette.border;
+                    accessible-role: progress-indicator;
+                    accessible-value: root.upd-text;
+                    Rectangle { x: 0; width: parent.width * root.upd-progress; background: Palette.accent-background; }
+                }
+                Text { text: root.upd-text; color: Palette.foreground; wrap: word-wrap; accessible-role: text; }
+                Text { text: Tr.s-notes; font-weight: 700; color: Palette.foreground; visible: root.upd-notes != ""; }
+                Rectangle {
+                    border-width: 1px; border-color: Palette.border; clip: true;
+                    visible: root.upd-notes != "";
+                    ScrollView {
+                        Text { x: 0; width: parent.width - 12px; text: root.upd-notes; wrap: word-wrap; color: Palette.foreground; font-size: 12px; }
+                    }
+                }
+                Button { text: Tr.close; enabled: !root.upd-busy; clicked => { root.show-settings = false; } }
+            }
+        }
+    }
     if root.show-about: Rectangle {
         background: #000000a0;
         TouchArea { }
@@ -386,7 +453,7 @@ export component MainWindow inherits Window {
             VerticalLayout {
                 padding: 16px;
                 spacing: 8px;
-                Text { text: Tr.app-title + " 0.2.1"; font-size: 18px; font-weight: 700; color: Palette.foreground; }
+                Text { text: Tr.app-title + " " + Tr.version; font-size: 18px; font-weight: 700; color: Palette.foreground; }
                 Text { text: Tr.copyright; color: Palette.foreground; wrap: word-wrap; }
                 Text { text: "MIT · dev.gonzalocn.com"; color: Palette.foreground; }
                 AboutSlint { }
@@ -395,6 +462,7 @@ export component MainWindow inherits Window {
         }
     }
 }
+
 
 
 

@@ -1,5 +1,14 @@
 ﻿# Changelog
 
+## 0.3.0 - Settings and updater
+### Added
+- Settings dialog: check for updates, download and install, optional check on start (off by default, at most once a day). One HTTPS GET to github.com; the installer comes only from official release assets, is limited in size and verified with SHA-256 (from the asset digest or SHA256SUMS.txt) before it runs; a failed check deletes the file. Setup relaunches the app.
+- Version is now read from CMake, not hard-coded in the UI.
+- Unit tests for release parsing, version comparison and refusal cases (no hash, foreign host, http, prerelease, malformed JSON).
+### Verified
+- Real download of the 0.2.1 installer from GitHub: size, SHA-256 match, wrong hash rejected and deleted, foreign and http URLs refused.
+### Not verified
+- The full in-app flow (update, installer run, relaunch) needs a newer release than the running version, so it can only be tried after this release exists.
 ## 0.2.1 - restore from the GUI
 ### Added
 - Tools page: "Restore table (VHD only)" with preview, typed confirmation and apply, using the same engine and safety rules as `diskpro-restore` (system disk, non-virtual, >4 GiB, size mismatch and mounted volumes are blocked; apply re-checks the selected disk).

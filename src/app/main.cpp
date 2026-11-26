@@ -19,6 +19,8 @@
 #include "device.h"
 #include "tools.h"
 #include "restore.h"
+#include "updater.h"
+#include <ctime>
 #include <commdlg.h>
 #include <cstdlib>
 #include <chrono>
@@ -382,6 +384,104 @@ int main(int argc, char** argv) {
         }).detach();
     });
 
+    struct UpdStr { const char *settings, *check, *install, *autoCk, *privacy, *notes, *checking, *upToDate, *available, *downloading, *verifying, *starting, *failed, *hashBad, *instFail, *checkFail; };
+    static const UpdStr kUpdEs = {"Ajustes", "Buscar actualizaciones", "Descargar e instalar", "Buscar actualizaciones al iniciar (una vez al día)",
+                                  "Desactivado por defecto. Solo se hace una petición HTTPS a github.com; no se envía ningún dato tuyo. El instalador descargado se verifica con SHA-256 antes de ejecutarse.",
+                                  "Novedades", "Buscando…", "Estás al día (versión ", "Hay una versión nueva: ", "Descargando ", "Verificando SHA-256…",
+                                  "Iniciando el instalador; Disk Pro se cerrará.", "Error de descarga: ", "La descarga no coincide con el SHA-256 publicado y se ha borrado.",
+                                  "No se pudo iniciar el instalador.", "No se pudo comprobar: "};
+    static const UpdStr kUpdEn = {"Settings", "Check for updates", "Download and install", "Check for updates on start (once a day)",
+                                  "Off by default. Only one HTTPS request to github.com is made; none of your data is sent. The downloaded installer is verified with SHA-256 before it runs.",
+                                  "What's new", "Checking…", "You are up to date (version ", "A new version is available: ", "Downloading ", "Verifying SHA-256…",
+                                  "Starting the installer; Disk Pro will close.", "Download error: ", "The download does not match the published SHA-256 and was deleted.",
+                                  "Could not start the installer.", "Could not check: "};
+    auto updStrings = [ui, &lang]() {
+        const UpdStr& u = lang == 1 ? kUpdEn : kUpdEs;
+        auto& g = ui->global<Tr>();
+        g.set_version(S(DISKPRO_VERSION)); g.set_settings(S(u.settings)); g.set_s_check(S(u.check)); g.set_s_install(S(u.install));
+        g.set_s_auto(S(u.autoCk)); g.set_s_privacy(S(u.privacy)); g.set_s_notes(S(u.notes));
+    };
+    updStrings();
+    ui->set_auto_update(settings->autoUpdate);
+
+    struct Upd { update::Release rel; int state = 0; };  // 0 idle, 1 checking, 2 up to date, 3 available, 4 downloading, 5 starting, 6 error
+    auto upd = std::make_shared<Upd>();
+    auto setUpd = [ui, upd](int state, const std::string& text) {
+        upd->state = state;
+        ui->set_upd_text(S(text));
+        ui->set_upd_busy(state == 1 || state == 4 || state == 5);
+        ui->set_upd_can_install(state == 3);
+    };
+    auto checkUpdates = [ui, settings, upd, setUpd, &lang](bool silent) {
+        if (upd->state == 1 || upd->state == 4 || upd->state == 5) return;
+        const UpdStr& u = lang == 1 ? kUpdEn : kUpdEs;
+        if (!silent) setUpd(1, u.checking);
+        settings->lastUpdateCheck = (long long)std::time(nullptr);
+        settings->save();
+        std::thread([ui, upd, setUpd, silent, &lang]() {
+            auto r = win::fetchLatestRelease();
+            slint::invoke_from_event_loop([=, &lang]() {
+                const UpdStr& u = lang == 1 ? kUpdEn : kUpdEs;
+                if (upd->state == 4 || upd->state == 5) return;
+                if (!r.ok) { if (!silent) setUpd(6, std::string(u.checkFail) + r.error); return; }
+                if (update::isNewer(r.version, DISKPRO_VERSION)) {
+                    upd->rel = r;
+                    ui->set_upd_notes(S(r.notes));
+                    setUpd(3, std::string(u.available) + r.version);
+                } else if (!silent) setUpd(2, std::string(u.upToDate) + DISKPRO_VERSION + ")");
+            });
+        }).detach();
+    };
+    ui->on_check_updates([checkUpdates]() { checkUpdates(false); });
+    ui->on_auto_update_changed([ui, settings](bool on) { settings->autoUpdate = on; settings->save(); ui->set_auto_update(on); });
+    ui->on_start_update([ui, upd, setUpd, toolBusy, &lang]() {
+        if (upd->state != 3 || upd->rel.installerUrl.empty()) return;
+        const UpdStr& u = lang == 1 ? kUpdEn : kUpdEs;
+        if (toolBusy->load()) { setUpd(6, lang == 1 ? "A tool is running. Wait for it to finish or cancel it first." : "Hay una herramienta en marcha. Espera a que termine o cancélala."); return; }
+        auto rel = upd->rel;
+        setUpd(4, std::string(u.downloading) + rel.version + " 0 %");
+        ui->set_upd_progress(0);
+        std::thread([=, &lang]() {
+            std::string file = win::updateDir() + "\\" + rel.installerName;
+            auto lastTick = std::make_shared<std::atomic<long long>>(0);
+            std::string e = win::downloadAsset(rel.installerUrl, file, [=, &lang](int64_t done, int64_t total) {
+                long long now = (long long)GetTickCount64();
+                if (now - lastTick->load() < 150) return;
+                lastTick->store(now);
+                float f = total > 0 ? float(double(done) / double(total)) : 0.f;
+                std::string pct = total > 0 ? std::to_string(int(f * 100)) + " %" : humanSize(uint64_t(done));
+                slint::invoke_from_event_loop([=, &lang]() {
+                    if (upd->state != 4) return;
+                    ui->set_upd_progress(f);
+                    setUpd(4, std::string((lang == 1 ? kUpdEn : kUpdEs).downloading) + rel.version + " " + pct);
+                });
+            }, nullptr);
+            bool bad = false;
+            if (e.empty()) {
+                slint::invoke_from_event_loop([=, &lang]() { setUpd(4, (lang == 1 ? kUpdEn : kUpdEs).verifying); });
+                bad = !win::verifyDownloaded(file, rel.sha256);
+            }
+            slint::invoke_from_event_loop([=, &lang]() {
+                const UpdStr& u = lang == 1 ? kUpdEn : kUpdEs;
+                if (!e.empty()) { setUpd(6, std::string(u.failed) + e); return; }
+                if (bad) { setUpd(6, u.hashBad); return; }
+                setUpd(5, u.starting);
+                if (!win::runInstaller(file)) { setUpd(6, u.instFail); return; }
+                slint::Timer::single_shot(std::chrono::milliseconds(600), []() { slint::quit_event_loop(); });
+            });
+        }).detach();
+    });
+    ui->on_language_changed([updStrings](int) { updStrings(); });
+    for (int i = 1; i < argc; ++i)
+        if (std::string(argv[i]) == "--settings-check") {
+            ui->set_show_settings(true);
+            slint::Timer::single_shot(std::chrono::milliseconds(800), [ui]() { ui->invoke_check_updates(); });
+        }
+    if (settings->autoUpdate && !selfTest) {
+        long long now = (long long)std::time(nullptr);
+        if (now < settings->lastUpdateCheck || now - settings->lastUpdateCheck >= 24 * 3600)
+            slint::Timer::single_shot(std::chrono::milliseconds(1500), [checkUpdates]() { checkUpdates(true); });
+    }
     for (int i = 1; i + 1 < argc; ++i)
         if (std::string(argv[i]) == "--tools-file") { *filePath = argv[i + 1]; ui->set_show_tools(true); sourceLabel(); }
     for (int i = 1; i + 1 < argc; ++i)
@@ -393,6 +493,7 @@ int main(int argc, char** argv) {
     ui->run();
     return 0;
 }
+
 
 
 
