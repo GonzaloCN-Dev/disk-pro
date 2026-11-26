@@ -17,7 +17,7 @@
 - Instalador: `installer/DiskPro.iss` + `installer/build-installer.ps1` (Inno Setup 6.7.x, mismo patrón que db-pro/rclone-lite). Sin firmar.
 
 ## Estado
-0.3.0: lectura + restaurar tabla de particiones solo en VHD (src/core/restore.*, diskpro-restore, tests/vhdx/run_restore_all.ps1). Además: analizador, inventario Win32, SMART NVMe, GUI Slint, CLI, pruebas, portable. Pendiente: ver README/CHANGELOG.
+0.3.1: lectura + restaurar tabla de particiones solo en VHD (src/core/restore.*, diskpro-restore, tests/vhdx/run_restore_all.ps1). Además: analizador, inventario Win32, SMART NVMe, GUI Slint, CLI, pruebas, portable. Pendiente: ver README/CHANGELOG.
 
 
 

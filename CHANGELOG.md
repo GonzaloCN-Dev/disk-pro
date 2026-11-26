@@ -1,5 +1,16 @@
 ﻿# Changelog
 
+## 0.3.1 - Export report
+### Added
+- **Export report** button: saves a plain-text report of the detected disks (size, bus, style, partitions, health, masked serial). Read-only; never overwrites an existing file.
+- Unit test for the report formatting.
+### Fixed
+- Toolbar no longer clips the last buttons; the window minimum width was raised and the filter box shrinks first.
+### Verified
+- 5/5 unit tests. A real report generated from this machine's inventory was read back and checked.
+### Not verified
+- The in-app update flow (0.3.0 -> 0.3.1), installer install/uninstall, VHDX, 4096-byte sectors, physical removable disks.
+
 ## 0.3.0 - Settings and updater
 ### Added
 - Settings dialog: check for updates, download and install, optional check on start (off by default, at most once a day). One HTTPS GET to github.com; the installer comes only from official release assets, is limited in size and verified with SHA-256 (from the asset digest or SHA256SUMS.txt) before it runs; a failed check deletes the file. Setup relaunches the app.

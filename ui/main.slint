@@ -54,6 +54,7 @@ export global Tr {
     in property <string> s-auto;
     in property <string> s-privacy;
     in property <string> s-notes;
+    in property <string> report;
     in property <string> t-ptb;
     in property <string> t-restore;
     in property <string> t-apply;
@@ -78,9 +79,9 @@ component Cell inherits Text {
 
 export component MainWindow inherits Window {
     title: Tr.app-title;
-    min-width: 760px;
+    min-width: 1180px;
     min-height: 520px;
-    preferred-width: 1080px;
+    preferred-width: 1200px;
     preferred-height: 700px;
     background: Palette.background;
 
@@ -108,6 +109,8 @@ export component MainWindow inherits Window {
     in property <bool> upd-can-install: false;
     in property <bool> upd-busy: false;
     in property <bool> auto-update: false;
+    in property <string> report-status;
+    callback export-report();
     callback check-updates();
     callback start-update();
     callback auto-update-changed(bool);
@@ -140,6 +143,8 @@ export component MainWindow inherits Window {
         HorizontalLayout {
             spacing: 8px;
             LineEdit {
+                min-width: 80px;
+                horizontal-stretch: 1;
                 placeholder-text: Tr.filter-hint;
                 accessible-label: Tr.filter-hint;
                 edited(t) => { root.filter-changed(t); }
@@ -172,6 +177,11 @@ export component MainWindow inherits Window {
                 clicked => { root.show-tools = !root.show-tools; }
             }
             Button {
+                text: Tr.report;
+                enabled: !root.loading && root.disks.length > 0;
+                clicked => { root.export-report(); }
+            }
+            Button {
                 text: Tr.settings;
                 clicked => { root.show-settings = true; }
             }
@@ -182,9 +192,10 @@ export component MainWindow inherits Window {
         }
 
         Text {
-            text: Tr.read-only;
+            text: root.report-status != "" ? root.report-status : Tr.read-only;
             color: Palette.foreground.with-alpha(0.7);
             font-size: 11px;
+            wrap: word-wrap;
         }
 
         if root.loading: Text {

@@ -20,9 +20,9 @@
 
 Disk Pro es una aplicación de escritorio en español e inglés para inspeccionar discos físicos y virtuales, sus tablas de particiones y su salud. Está escrita en C++ con Slint: sin Electron, sin WebView y sin servidores. Desarrollado por **Gonzalo Cruz Núñez** ([GCN Dev](https://dev.gonzalocn.com/)).
 
-> **Estado: 0.3.0.** El programa es de lectura salvo una operación: restaurar una copia de la tabla de particiones **en discos virtuales (VHD)**, desde la línea de comandos. No crea, borra, formatea ni redimensiona particiones, ni clona, ni recupera archivos: esas funciones están pendientes y no se simulan. Consulta [Estado y límites](#estado-y-límites).
+> **Estado: 0.3.1.** El programa es de lectura salvo una operación: restaurar una copia de la tabla de particiones **en discos virtuales (VHD)**, desde la línea de comandos. No crea, borra, formatea ni redimensiona particiones, ni clona, ni recupera archivos: esas funciones están pendientes y no se simulan. Consulta [Estado y límites](#estado-y-límites).
 
-*EN – Disk Pro is a free, open-source, native Windows disk inspector (GPT/MBR, partitions, NVMe health, imaging, hex viewer). Version 0.3.0 is read-only except for one command that restores a partition-table backup onto virtual disks only.*
+*EN – Disk Pro is a free, open-source, native Windows disk inspector (GPT/MBR, partitions, NVMe health, imaging, hex viewer). Version 0.3.1 is read-only except for one command that restores a partition-table backup onto virtual disks only.*
 
 ## Capturas
 
@@ -71,7 +71,7 @@ Windows 10 u 11 de 64 bits. El instalador incluye el runtime de Visual C++; el z
 
 ## Instalación
 
-Descarga `DiskPro-Setup-0.3.0.exe` (instalador, por usuario, sin administrador) o `DiskPro-0.3.0-win64-portable.zip` desde [Releases](https://github.com/GonzaloCN-Dev/disk-pro/releases/latest). Los hashes están en `SHA256SUMS.txt`.
+Descarga `DiskPro-Setup-0.3.1.exe` (instalador, por usuario, sin administrador) o `DiskPro-0.3.1-win64-portable.zip` desde [Releases](https://github.com/GonzaloCN-Dev/disk-pro/releases/latest). Los hashes están en `SHA256SUMS.txt`.
 
 ## Compilar desde el código
 
@@ -79,7 +79,7 @@ Requisitos: Visual Studio 2022 Build Tools (C++, CMake, Ninja) y el SDK C++ de S
 
 ```
 build.cmd      # compila y ejecuta las pruebas
-package.cmd    # genera dist\DiskPro-0.3.0-win64-portable.zip
+package.cmd    # genera dist\DiskPro-0.3.1-win64-portable.zip
 powershell -File installer\build-installer.ps1   # instalador (requiere Inno Setup 6)
 ```
 

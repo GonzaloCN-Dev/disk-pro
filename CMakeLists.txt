@@ -1,5 +1,5 @@
-﻿cmake_minimum_required(VERSION 3.20)
-project(DiskPro VERSION 0.3.0 LANGUAGES CXX)
+cmake_minimum_required(VERSION 3.20)
+project(DiskPro VERSION 0.3.1 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -20,7 +20,7 @@ add_executable(diskpro-cli src/cli/main.cpp)
 target_link_libraries(diskpro-cli PRIVATE diskpro_core)
 
 if(WIN32)
-  add_library(diskpro_win STATIC src/platform/win/inventory.cpp src/platform/win/smart.cpp src/platform/win/device.cpp src/platform/win/updater.cpp)
+  add_library(diskpro_win STATIC src/platform/win/inventory.cpp src/platform/win/smart.cpp src/platform/win/device.cpp src/platform/win/updater.cpp src/platform/win/report.cpp)
   target_include_directories(diskpro_win PUBLIC src/platform/win)
   target_link_libraries(diskpro_win PUBLIC diskpro_core winhttp)
   add_executable(diskpro-restore src/cli/restore_main.cpp)
@@ -64,6 +64,11 @@ add_test(NAME restore COMMAND diskpro-tests-restore)
 add_executable(diskpro-tests-update tests/test_update.cpp)
 target_link_libraries(diskpro-tests-update PRIVATE diskpro_core)
 add_test(NAME update COMMAND diskpro-tests-update)
+if(WIN32)
+  add_executable(diskpro-tests-report tests/test_report.cpp)
+  target_link_libraries(diskpro-tests-report PRIVATE diskpro_win)
+  add_test(NAME report COMMAND diskpro-tests-report)
+endif()
 
 
 

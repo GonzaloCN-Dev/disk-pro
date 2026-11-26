@@ -20,6 +20,9 @@
 #include "tools.h"
 #include "restore.h"
 #include "updater.h"
+#include "report.h"
+#include <fstream>
+#include <filesystem>
 #include <ctime>
 #include <commdlg.h>
 #include <cstdlib>
@@ -399,7 +402,7 @@ int main(int argc, char** argv) {
         const UpdStr& u = lang == 1 ? kUpdEn : kUpdEs;
         auto& g = ui->global<Tr>();
         g.set_version(S(DISKPRO_VERSION)); g.set_settings(S(u.settings)); g.set_s_check(S(u.check)); g.set_s_install(S(u.install));
-        g.set_s_auto(S(u.autoCk)); g.set_s_privacy(S(u.privacy)); g.set_s_notes(S(u.notes));
+        g.set_s_auto(S(u.autoCk)); g.set_s_privacy(S(u.privacy)); g.set_s_notes(S(u.notes)); g.set_report(S(lang == 1 ? "Export report…" : "Exportar informe…"));
     };
     updStrings();
     ui->set_auto_update(settings->autoUpdate);
@@ -471,6 +474,19 @@ int main(int argc, char** argv) {
             });
         }).detach();
     });
+    ui->on_export_report([ui, st, &lang]() {
+        const bool en = lang == 1;
+        std::string p = pickFile(true, L"txt");
+        if (p.empty()) return;
+        if (p.find('.', p.find_last_of("\\/") == std::string::npos ? 0 : p.find_last_of("\\/")) == std::string::npos) p += ".txt";
+        std::error_code ec;
+        if (std::filesystem::exists(std::filesystem::u8path(p), ec)) { ui->set_report_status(S(en ? "The file already exists; nothing was overwritten." : "El archivo ya existe; no se ha sobrescrito nada.")); return; }
+        std::string text = win::buildReport(st->disks, st->health, DISKPRO_VERSION);
+        std::ofstream f(std::filesystem::u8path(p), std::ios::binary | std::ios::trunc);
+        f.write(text.data(), std::streamsize(text.size()));
+        f.close();
+        ui->set_report_status(S(f ? (en ? "Report saved: " : "Informe guardado: ") + p : std::string(en ? "Could not write the report." : "No se pudo escribir el informe.")));
+    });
     ui->on_language_changed([updStrings](int) { updStrings(); });
     for (int i = 1; i < argc; ++i)
         if (std::string(argv[i]) == "--settings-check") {
@@ -488,6 +504,16 @@ int main(int argc, char** argv) {
         if (std::string(argv[i]) == "--tools-run") {
             std::string c = argv[i + 1];
             slint::Timer::single_shot(std::chrono::milliseconds(800), [ui, c]() { ui->invoke_tool_run(S(c), S("512")); });
+        }
+    for (int i = 1; i + 1 < argc; ++i)
+        if (std::string(argv[i]) == "--export-report") {
+            std::string out = argv[i + 1];
+            slint::Timer::single_shot(std::chrono::milliseconds(4000), [st, out]() {
+                std::string text = win::buildReport(st->disks, st->health, DISKPRO_VERSION);
+                std::ofstream f(std::filesystem::u8path(out), std::ios::binary | std::ios::trunc);
+                f.write(text.data(), std::streamsize(text.size()));
+                slint::quit_event_loop();
+            });
         }
     refresh();
     ui->run();
