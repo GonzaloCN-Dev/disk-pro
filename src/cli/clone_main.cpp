@@ -15,11 +15,17 @@ using namespace diskpro;
 int main(int argc, char** argv) {
     long srcDisk = -1, dstDisk = -1;
     std::string image, typed;
-    for (int i = 1; i + 1 < argc; ++i) {
-        if (!std::strcmp(argv[i], "--disk")) srcDisk = std::strtol(argv[i + 1], nullptr, 10);
-        else if (!std::strcmp(argv[i], "--image")) image = argv[i + 1];
-        else if (!std::strcmp(argv[i], "--to")) dstDisk = std::strtol(argv[i + 1], nullptr, 10);
-        else if (!std::strcmp(argv[i], "--confirm")) typed = argv[i + 1];
+    for (int i = 1; i < argc; ++i) {
+        auto value = [&](const char* option) -> const char* {
+            if (i + 1 >= argc) { std::fprintf(stderr, "%s requires a value\n", option); return nullptr; }
+            return argv[++i];
+        };
+        const char* v = nullptr;
+        if (!std::strcmp(argv[i], "--disk")) { if (!(v = value("--disk"))) return 2; srcDisk = std::strtol(v, nullptr, 10); }
+        else if (!std::strcmp(argv[i], "--image")) { if (!(v = value("--image"))) return 2; image = v; }
+        else if (!std::strcmp(argv[i], "--to")) { if (!(v = value("--to"))) return 2; dstDisk = std::strtol(v, nullptr, 10); }
+        else if (!std::strcmp(argv[i], "--confirm")) { if (!(v = value("--confirm"))) return 2; typed = v; }
+        else { std::fprintf(stderr, "unknown argument: %s\n", argv[i]); return 2; }
     }
     if (dstDisk < 0 || (srcDisk < 0) == image.empty()) {
         std::fprintf(stderr, "usage: diskpro-clone (--disk N | --image file) --to M [--confirm \"CLONE TO DISK M\"]\n");
@@ -64,7 +70,7 @@ int main(int argc, char** argv) {
     if (typed.empty()) { std::printf("Nothing written. To apply, run again with: --confirm \"%s\"\n", plan.token.c_str()); return 0; }
     if (typed != plan.token) { std::printf("Confirmation text does not match. Nothing written.\n"); return 3; }
 
-    DeviceSink sink{static_cast<int>(dstDisk)};
+    DeviceSink sink{static_cast<int>(dstDisk), t};
     if (!sink.ok()) { std::fprintf(stderr, "cannot open target for writing (administrator?)\n"); return 1; }
     int lastPct = -1, lastPhase = -1;
     auto res = applyClone(*src, sink, back, plan, typed, [&](int ph, uint64_t d, uint64_t tot) {

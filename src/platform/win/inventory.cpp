@@ -104,8 +104,8 @@ void queryLayout(HANDLE h, DiskInfo& d) {
 std::vector<DiskInfo> enumerateDisks() {
     std::vector<DiskInfo> out;
     char sysDir[MAX_PATH]{};
-    GetWindowsDirectoryA(sysDir, MAX_PATH);
-    std::string sysVol = std::string(1, sysDir[0]);
+    const UINT sysDirLength = GetWindowsDirectoryA(sysDir, MAX_PATH);
+    const std::string sysVol = sysDirLength > 0 && sysDirLength < MAX_PATH ? std::string(1, sysDir[0]) : std::string();
     for (uint32_t i = 0; i < 64; ++i) {
         DiskInfo d;
         d.number = i;
@@ -138,15 +138,25 @@ std::vector<DiskInfo> enumerateDisks() {
         DWORD n = 0;
         if (!DeviceIoControl(v.h, IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS, nullptr, 0, b, sizeof b, &n, nullptr)) continue;
         auto* ex = reinterpret_cast<VOLUME_DISK_EXTENTS*>(b);
-        char fsName[32]{};
-        GetVolumeInformationA(root, nullptr, 0, nullptr, nullptr, nullptr, fsName, sizeof fsName);
+        char fsName[32]{}, volumeLabel[MAX_PATH]{};
+        const bool hasVolumeInfo = GetVolumeInformationA(root, volumeLabel, DWORD(std::size(volumeLabel)), nullptr, nullptr, nullptr,
+                                                         fsName, DWORD(std::size(fsName))) != FALSE;
+        ULARGE_INTEGER freeAvailable{}, totalBytes{}, totalFreeBytes{};
+        const bool hasCapacity = GetDiskFreeSpaceExA(root, &freeAvailable, &totalBytes, &totalFreeBytes) != FALSE;
         for (DWORD e = 0; e < ex->NumberOfDiskExtents; ++e)
             for (auto& d : out)
                 if (d.number == ex->Extents[e].DiskNumber) {
                     for (auto& p : d.partitions)
-                        if (p.offsetBytes == uint64_t(ex->Extents[e].StartingOffset.QuadPart)) { p.volume = root; p.filesystem = fsName; }
-                    d.volumes.push_back(root);
-                    if (root[0] == sysVol[0]) d.isSystemDisk = true;
+                        if (p.offsetBytes == uint64_t(ex->Extents[e].StartingOffset.QuadPart)) {
+                            p.volume = root;
+                            if (hasVolumeInfo) { p.filesystem = fsName; p.volumeLabel = volumeLabel; }
+                            if (hasCapacity) {
+                                p.volumeTotalBytes = totalBytes.QuadPart;
+                                p.volumeFreeBytes = totalFreeBytes.QuadPart;
+                            }
+                        }
+                    if (std::find(d.volumes.begin(), d.volumes.end(), root) == d.volumes.end()) d.volumes.push_back(root);
+                    if (!sysVol.empty() && root[0] == sysVol[0]) d.isSystemDisk = true;
                 }
     }
     return out;

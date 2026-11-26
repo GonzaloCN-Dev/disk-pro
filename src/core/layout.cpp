@@ -327,7 +327,12 @@ const char* schemeName(Scheme s) {
 uint32_t crc32(const void* data, size_t len) {
     static const auto table = [] {
         std::array<uint32_t, 256> t{};
-        for (uint32_t i = 0; i < 256; ++i) { uint32_t c = i; for (int k = 0; k < 8; ++k) c = (c & 1) ? 0xEDB88320u ^ (c >> 1) : c >> 1; t[i] = c; }
+        uint32_t i = 0;
+        for (uint32_t& entry : t) {
+            uint32_t c = i++;
+            for (int k = 0; k < 8; ++k) c = (c & 1) ? 0xEDB88320u ^ (c >> 1) : c >> 1;
+            entry = c;
+        }
         return t;
     }();
     uint32_t c = 0xFFFFFFFFu;

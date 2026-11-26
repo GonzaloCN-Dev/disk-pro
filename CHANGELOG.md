@@ -1,5 +1,19 @@
 ﻿# Changelog
 
+## 0.6.0 - 2026-11-26
+- Added Windows CI, MSVC static-analysis build, compatibility/roadmap/progress/testing documents, and a GUI smoke test.
+- Inventory now exposes mounted-volume labels and free/total capacity when Windows provides them; filtering and reports include more disk and partition details.
+- Hardened writes against stale previews and device replacement: operation plans record target geometry, apply functions reject changes, and the Win32 sink revalidates virtual/non-system status, size, sector size and bus before opening write access.
+- Write engines now lock and dismount every affected volume, including volumes without drive letters, before restore, clone or partition-table edits.
+- Clarified GUI/CLI write notices and the distinct confirmation token used by formatting.
+- Added native VHD/VHDX creation and read-only-by-default attach/detach in `diskpro-vhd` and the GUI, with disposable creation tests and packaging integration.
+- Lost-partition candidates now include a deterministic structural score and evidence (alignment and matching backup boot sector where available).
+- GUI now exposes both FAT32 and exFAT formatting, and health warnings include actionable guidance.
+- Fixed duplicate Slint callback registrations that silently replaced language-change and disk-selection behavior; added GUI interaction and invalid-CLI regression tests.
+- Added raw-image format documentation and `diskpro-tools verify` for SHA-256 verification.
+- Added limited FAT32 deleted-file discovery and extraction to a new destination, with candidate revalidation, exclusive output creation, SHA-256 and synthetic regression tests.
+- Added ATA SMART decoding for temperature, power-on hours, reallocated, pending and uncorrectable sectors, with actionable GUI severity and parser tests.
+
 ## 0.5.1 - Interface polish
 - Partition bar: visible grip marks on both edges of each partition and a wider grab zone (9 px); the resize cursor is the standard horizontal double arrow.
 - Partition table: the `Offset` column is now `Start on disk` (`Inicio en el disco`) and drawn in a muted italic tone so it is not mistaken for the size.
@@ -27,8 +41,6 @@
 
 ## 0.3.1 - Export report
 ### Added
-- **Format as FAT32** (own implementation, quick format; `diskpro-part format` and the right-click menu). Writes only inside the chosen partition, confirmation `FORMAT DISK N PARTITION I`. exFAT and NTFS are NOT implemented.
-- **Partition table editing** (diskpro-part, right-click menu and Tools page): new MBR/GPT table, create, delete, change type, mark active, resize/move and merge contiguous partitions. Only the table is written (never file systems); MBR primary partitions only; same write policy as clone/restore; typed confirmation `EDIT DISK N`; read-back verification and re-analysis.
 - **Export report** button: saves a plain-text report of the detected disks (size, bus, style, partitions, health, masked serial). Read-only; never overwrites an existing file.
 - Unit test for the report formatting.
 ### Fixed
@@ -40,7 +52,6 @@
 
 ## 0.3.0 - Settings and updater
 ### Added
-- **Format as FAT32** (own implementation, quick format; `diskpro-part format` and the right-click menu). Writes only inside the chosen partition, confirmation `FORMAT DISK N PARTITION I`. exFAT and NTFS are NOT implemented.
 - Settings dialog: check for updates, download and install, optional check on start (off by default, at most once a day). One HTTPS GET to github.com; the installer comes only from official release assets, is limited in size and verified with SHA-256 (from the asset digest or SHA256SUMS.txt) before it runs; a failed check deletes the file. Setup relaunches the app.
 - Version is now read from CMake, not hard-coded in the UI.
 - Unit tests for release parsing, version comparison and refusal cases (no hash, foreign host, http, prerelease, malformed JSON).
@@ -50,8 +61,6 @@
 - The full in-app flow (update, installer run, relaunch) needs a newer release than the running version, so it can only be tried after this release exists.
 ## 0.2.1 - restore from the GUI
 ### Added
-- **Format as FAT32** (own implementation, quick format; `diskpro-part format` and the right-click menu). Writes only inside the chosen partition, confirmation `FORMAT DISK N PARTITION I`. exFAT and NTFS are NOT implemented.
-- **Partition table editing** (diskpro-part, right-click menu and Tools page): new MBR/GPT table, create, delete, change type, mark active, resize/move and merge contiguous partitions. Only the table is written (never file systems); MBR primary partitions only; same write policy as clone/restore; typed confirmation `EDIT DISK N`; read-back verification and re-analysis.
 - Tools page: "Restore table (VHD only)" with preview, typed confirmation and apply, using the same engine and safety rules as `diskpro-restore` (system disk, non-virtual, >4 GiB, size mismatch and mounted volumes are blocked; apply re-checks the selected disk).
 ### Changed
 - The window notice no longer says nothing is modified; it states that only VHD restore writes.
@@ -60,8 +69,6 @@
 
 ## 0.2.0 - first write operation (partition table restore, virtual disks only)
 ### Added
-- **Format as FAT32** (own implementation, quick format; `diskpro-part format` and the right-click menu). Writes only inside the chosen partition, confirmation `FORMAT DISK N PARTITION I`. exFAT and NTFS are NOT implemented.
-- **Partition table editing** (diskpro-part, right-click menu and Tools page): new MBR/GPT table, create, delete, change type, mark active, resize/move and merge contiguous partitions. Only the table is written (never file systems); MBR primary partitions only; same write policy as clone/restore; typed confirmation `EDIT DISK N`; read-back verification and re-analysis.
 - `diskpro-restore`: restores a `.ptb` partition-table backup (first/last MiB) onto a VIRTUAL disk. Preview by default; applying needs the typed text `RESTORE DISK N`; writes are flushed and verified by reading back.
 - Write engine in `src/core/restore.*`, separate from the read-only code. Blocks: system disk, non-virtual disks, disks over 4 GiB, size or sector-size mismatch, disks with mounted volumes. Refuses tampered plans and out-of-range writes.
 - Backups now record the disk identifier. Backup creation and `ptverify` unchanged.
@@ -74,8 +81,6 @@ Restore has no GUI. It does not restore partition contents. VHDX, 4096-byte sect
 
 ## 0.1.0 (unreleased candidate) – read-only MVP
 ### Added
-- **Format as FAT32** (own implementation, quick format; `diskpro-part format` and the right-click menu). Writes only inside the chosen partition, confirmation `FORMAT DISK N PARTITION I`. exFAT and NTFS are NOT implemented.
-- **Partition table editing** (diskpro-part, right-click menu and Tools page): new MBR/GPT table, create, delete, change type, mark active, resize/move and merge contiguous partitions. Only the table is written (never file systems); MBR primary partitions only; same write policy as clone/restore; typed confirmation `EDIT DISK N`; read-back verification and re-analysis.
 - MBR/GPT analyzer (CRC checks, backup header, EBR chain with loop guard, overlap/range checks, 512/4096 sectors, NTFS/FAT/exFAT detection, fixed-VHD footer handling).
 - Win32 read-only inventory (physical/virtual disks, partitions, drive letters, file system, system-disk detection, masked serial).
 - Health: NVMe SMART/Health log and generic predict-failure flag; "not supported" otherwise.
@@ -89,9 +94,3 @@ Restore has no GUI. It does not restore partition contents. VHDX, 4096-byte sect
 - Windows installer (Inno Setup 6, Spanish, per-user by default, optional all-users, bundles the VC++ runtime, uninstall offers to remove settings), same style as Rclone Lite and Db Pro. Not code-signed.
 ### Not included yet
 Write operations, cloning, image restore, recovery, ATA SMART attributes, VHDX-specific tests, sector 4096 on real devices.
-
-
-
-
-
-

@@ -2,7 +2,7 @@
 ; Compilar con: installer\build-installer.ps1
 
 #ifndef AppVersion
-  #define AppVersion "0.5.1"
+  #define AppVersion "0.6.0"
 #endif
 #define AppName "Disk Pro"
 #define AppPublisher "Gonzalo Cruz Núñez"
@@ -53,11 +53,14 @@ Source: "payload\diskpro-tools.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "payload\diskpro-restore.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "payload\diskpro-clone.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "payload\diskpro-part.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "payload\diskpro-vhd.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "payload\*.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "payload\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "payload\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "payload\SLINT-LICENSE.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "payload\THIRD_PARTY_NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "payload\ROADMAP.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "payload\docs\*"; DestDir: "{app}\docs"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "LICENSES.txt"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]

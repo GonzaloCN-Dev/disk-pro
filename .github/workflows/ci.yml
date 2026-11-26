@@ -1,0 +1,31 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Slint C++ 1.19.1
+        shell: pwsh
+        run: |
+          $u='https://github.com/slint-ui/slint/releases/download/v1.19.1/Slint-cpp-1.19.1-win64-MSVC-AMD64.exe'
+          Invoke-WebRequest $u -OutFile slint.exe
+          $h=(Get-FileHash slint.exe).Hash
+          if ($h -ne '0F859DAD80517120094CCE5ACACE65C4CACE24BD25329F29806AD1D8C561A4BE') { throw "hash mismatch $h" }
+          Start-Process .\slint.exe -ArgumentList '/S',"/D=$PWD\.tools\slint" -Wait
+      - name: Build and test
+        shell: cmd
+        run: build.cmd
+      - name: Package
+        shell: cmd
+        run: package.cmd
+      - name: Installer
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          $env:LOCALAPPDATA = $env:LOCALAPPDATA
+          powershell -NoProfile -ExecutionPolicy Bypass -File installer\build-installer.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DiskPro-portable
+          path: dist/

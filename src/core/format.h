@@ -19,6 +19,8 @@ struct FormatOp {
 
 struct FormatPlan {
     bool allowed = false;
+    uint64_t targetSize = 0;
+    uint32_t sectorSize = 0;
     std::vector<std::string> blockers, warnings;
     std::vector<TableWrite> writes;
     uint64_t partOffset = 0, partLength = 0;

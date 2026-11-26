@@ -27,6 +27,8 @@ struct TableWrite { uint64_t offset = 0; std::vector<uint8_t> data; };
 
 struct PartOpPlan {
     bool allowed = false;
+    uint64_t targetSize = 0;
+    uint32_t sectorSize = 0;
     std::vector<std::string> blockers;
     std::vector<std::string> warnings;
     std::vector<TableWrite> writes;

@@ -38,6 +38,13 @@ public:
     bool write(uint64_t, const void*, size_t) override { return true; }
     bool flush() override { return true; }
 };
+class UnavailableVolumeSink final : public ByteSink {
+public:
+    bool prepare(uint64_t, uint64_t) override { return false; }
+    bool write(uint64_t, const void*, size_t) override { ++writes; return true; }
+    bool flush() override { return true; }
+    int writes = 0;
+};
 
 int main() {
     const size_t SZ = 4 * 1024 * 1024;
@@ -77,8 +84,20 @@ int main() {
         r = applyRestore(bak, denied, denied.token, sk, rb); CHECK(!r.ok && !r.written);
         RestorePlan forged = plan; forged.ranges[0].length = 512;   // plan tampered: write must refuse
         r = applyRestore(bak, forged, plan.token, sk, rb); CHECK(!r.ok && !r.written);
+        UnavailableVolumeSink unavailable;
+        r = applyRestore(bak, plan, plan.token, unavailable, rb);
+        CHECK(!r.ok && !r.written && unavailable.writes == 0);
     }
     CHECK(readFile(tgtPath) == tgt);
+    // A target whose size changed after preview is rejected before writing.
+    const auto replacedPath = tmpPath("dp_replaced.img");
+    {
+        writeFile(replacedPath, std::vector<uint8_t>(SZ + 512, 0));
+        FileSource rb(replacedPath); FileSink sk(replacedPath);
+        auto r = applyRestore(bak, plan, plan.token, sk, rb);
+        CHECK(!r.ok && !r.written);
+    }
+    std::filesystem::remove(replacedPath);
 
     // Real restore
     {

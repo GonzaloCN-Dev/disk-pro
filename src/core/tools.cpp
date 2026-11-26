@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <vector>
 
 namespace diskpro {
 
@@ -231,9 +232,9 @@ BackupResult verifyPartitionBackup(const std::string& path) {
 #endif
     if (!f) { r.error = "cannot open file"; return r; }
     std::string all;
-    char buf[65536];
+    std::vector<char> buf(65536);
     size_t n;
-    while ((n = std::fread(buf, 1, sizeof buf, f)) > 0) { all.append(buf, n); if (all.size() > (64u << 20)) break; }
+    while ((n = std::fread(buf.data(), 1, buf.size(), f)) > 0) { all.append(buf.data(), n); if (all.size() > (64u << 20)) break; }
     std::fclose(f);
     size_t end = all.find("\n\n");
     if (all.compare(0, sizeof kMagic - 1, kMagic) != 0 || end == std::string::npos) { r.error = "not a Disk Pro backup"; return r; }

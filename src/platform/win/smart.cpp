@@ -5,10 +5,35 @@
 #include <winioctl.h>
 #include <nvme.h>
 
+#include <algorithm>
 #include <cstring>
 #include <vector>
 
 namespace diskpro::win {
+
+bool parseAtaSmart(const uint8_t* data, size_t size, HealthInfo& h) {
+    if (!data || size < 362) return false;
+    bool any = false;
+    for (size_t off = 2; off + 12 <= std::min<size_t>(size, 362); off += 12) {
+        const uint8_t id = data[off];
+        if (!id || id == 0xFF) continue;
+        uint64_t raw = 0;
+        for (int i = 0; i < 6; ++i) raw |= uint64_t(data[off + 5 + i]) << (8 * i);
+        switch (id) {
+            case 5: h.reallocatedSectors = raw; any = true; break;
+            case 9: if (!h.nvmeAvailable) h.powerOnHours = raw; any = true; break;
+            case 194:
+                if (!h.nvmeAvailable) h.temperatureC = int(data[off + 5]);
+                any = true;
+                break;
+            case 197: h.pendingSectors = raw; any = true; break;
+            case 198: h.uncorrectableSectors = raw; any = true; break;
+            default: break;
+        }
+    }
+    h.ataAvailable = any;
+    return any;
+}
 
 HealthInfo queryHealth(uint32_t n) {
     HealthInfo h;
@@ -56,10 +81,11 @@ HealthInfo queryHealth(uint32_t n) {
         if (DeviceIoControl(dev, IOCTL_STORAGE_PREDICT_FAILURE, nullptr, 0, &pf, sizeof pf, &ret, nullptr)) {
             h.predictFailureAvailable = true;
             h.predictFailure = pf.PredictFailure != 0;
+            parseAtaSmart(pf.VendorSpecific, sizeof pf.VendorSpecific, h);
         }
     }
     CloseHandle(dev);
-    if (!h.nvmeAvailable && !h.predictFailureAvailable)
+    if (!h.nvmeAvailable && !h.ataAvailable && !h.predictFailureAvailable)
         h.note = "SMART not supported or not exposed by this device/driver (common for USB bridges and virtual disks)";
     return h;
 }

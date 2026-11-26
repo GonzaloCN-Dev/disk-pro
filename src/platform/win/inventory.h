@@ -12,8 +12,11 @@ struct PartitionInfo {
     std::string style;  // MBR / GPT
     uint64_t offsetBytes = 0;
     uint64_t lengthBytes = 0;
+    uint64_t volumeTotalBytes = 0;
+    uint64_t volumeFreeBytes = 0;
     std::string typeName;
     std::string volume;      // drive letter root, e.g. "C:\\", when mounted
+    std::string volumeLabel;
     std::string filesystem;  // reported by Windows for the mounted volume
 };
 

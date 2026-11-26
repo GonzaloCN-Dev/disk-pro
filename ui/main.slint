@@ -41,6 +41,8 @@ export global Tr {
     in property <string> t-image;
     in property <string> t-scan;
     in property <string> t-recover;
+    in property <string> t-files;
+    in property <string> t-extract;
     in property <string> t-hex;
     in property <string> t-open;
     in property <string> t-cancel;
@@ -65,6 +67,10 @@ export global Tr {
     in property <string> t-clone;
     in property <string> t-clone-apply;
     in property <string> t-clone-target;
+    in property <string> t-vhd-create;
+    in property <string> t-vhd-attach;
+    in property <string> t-vhd-detach;
+    in property <string> t-vhd-size;
     in property <string> m-file;
     in property <string> m-disk;
     in property <string> m-view;
@@ -72,7 +78,6 @@ export global Tr {
     in property <string> m-exit;
     in property <string> tb-clone;
     in property <string> tb-restore;
-    in property <string> c-soon;
     in property <string> c-part;
     in property <string> c-disk;
     in property <string> c-plan;
@@ -109,7 +114,7 @@ component ToolBtn inherits Rectangle {
             Path {
                 width: 30px; height: 30px; viewbox-width: 24; viewbox-height: 24;
                 commands: root.icon;
-                stroke: Palette.foreground; stroke-width: 1.7px; fill: transparent;
+                stroke: Palette.foreground; stroke-width: 1.7px;
                 stroke-line-cap: round; stroke-line-join: round;
             }
         }
@@ -178,6 +183,7 @@ export component MainWindow inherits Window {
     in property <string> tool-status;
     in property <string> tool-output;
     in-out property <string> hex-offset: "0";
+    in-out property <string> recovery-candidate: "1";
     in property <string> error-text;
     in-out property <int> selected: -1;
     in-out property <string> filter-text;
@@ -210,6 +216,10 @@ export component MainWindow inherits Window {
     callback tool-run(string, string);
     callback tool-open-file();
     callback tool-cancel();
+    in-out property <string> vhd-size: "128";
+    callback vhd-create();
+    callback vhd-attach();
+    callback vhd-detach();
     in property <bool> part-ready: false;
     in-out property <string> part-confirm;
     in-out property <string> edit-start;
@@ -438,7 +448,7 @@ export component MainWindow inherits Window {
                                                     width: 18px; height: 18px; viewbox-width: 24; viewbox-height: 24;
                                                     commands: "M3 8h18v8H3z M6 12h.5 M16 12h3";
                                                     stroke: i == root.selected ? Palette.accent-foreground : Palette.foreground;
-                                                    stroke-width: 1.8px; fill: transparent;
+                                    stroke-width: 1.8px;
                                                 }
                                             }
                                             Text {
@@ -531,6 +541,7 @@ export component MainWindow inherits Window {
                                             MenuItem { title: Tr.t-hash + " (" + Tr.c-part + ")"; activated => { root.part-selected(i); root.ctx-action("hash", i); } }
                                             MenuItem { title: Tr.t-image + " (" + Tr.c-part + ")"; activated => { root.part-selected(i); root.ctx-action("image", i); } }
                                             MenuItem { title: Tr.t-scan + " (" + Tr.c-part + ")"; activated => { root.part-selected(i); root.ctx-action("scan", i); } }
+                                            MenuItem { title: Tr.t-files; activated => { root.part-selected(i); root.ctx-action("files", i); } }
                                             MenuSeparator {}
                                             Menu {
                                                 title: Tr.c-disk;
@@ -553,6 +564,7 @@ export component MainWindow inherits Window {
                                                 MenuItem { title: Tr.c-ops[7]; activated => { root.ctx-action("p:initgpt", -1); } }
                                             }
                                             MenuItem { title: Tr.c-future[0]; activated => { root.part-selected(i); root.ctx-action("p:format", i); } }
+                                            MenuItem { title: Tr.c-future[1]; activated => { root.part-selected(i); root.ctx-action("p:format-exfat", i); } }
                                         }
                                     }
                                 }
@@ -597,6 +609,12 @@ export component MainWindow inherits Window {
                         }
                         HorizontalLayout {
                             spacing: 8px;
+                            Button { text: Tr.t-files; enabled: !root.tool-busy; clicked => { root.tool-run("files", ""); } }
+                            LineEdit { width: 60px; text <=> root.recovery-candidate; accessible-label: Tr.t-extract; }
+                            Button { text: Tr.t-extract; enabled: !root.tool-busy; clicked => { root.tool-run("extract", root.recovery-candidate); } }
+                        }
+                        HorizontalLayout {
+                            spacing: 8px;
                             Button { text: Tr.t-restore; enabled: !root.tool-busy; clicked => { root.restore-preview(); } }
                             LineEdit { horizontal-stretch: 1; enabled: root.restore-ready; placeholder-text: Tr.t-confirm-hint; text <=> root.restore-confirm; accessible-label: Tr.t-confirm-hint; }
                             Button { text: Tr.t-apply; enabled: root.restore-ready && !root.tool-busy; clicked => { root.restore-apply(root.restore-confirm); } }
@@ -608,6 +626,14 @@ export component MainWindow inherits Window {
                             Button { text: Tr.t-clone; enabled: !root.tool-busy; clicked => { root.clone-preview(root.clone-target); } }
                             LineEdit { horizontal-stretch: 1; enabled: root.clone-ready; placeholder-text: Tr.t-confirm-hint; text <=> root.clone-confirm; accessible-label: Tr.t-confirm-hint; }
                             Button { text: Tr.t-clone-apply; enabled: root.clone-ready && !root.tool-busy; clicked => { root.clone-apply(root.clone-confirm); } }
+                        }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Text { text: Tr.t-vhd-size; color: Palette.foreground; vertical-alignment: center; }
+                            LineEdit { width: 80px; text <=> root.vhd-size; accessible-label: Tr.t-vhd-size; }
+                            Button { text: Tr.t-vhd-create; enabled: !root.tool-busy; clicked => { root.vhd-create(); } }
+                            Button { text: Tr.t-vhd-attach; enabled: !root.tool-busy; clicked => { root.vhd-attach(); } }
+                            Button { text: Tr.t-vhd-detach; enabled: !root.tool-busy; clicked => { root.vhd-detach(); } }
                         }
                         HorizontalLayout {
                             spacing: 8px;
@@ -727,11 +753,6 @@ export component MainWindow inherits Window {
         }
     }
 }
-
-
-
-
-
 
 
 

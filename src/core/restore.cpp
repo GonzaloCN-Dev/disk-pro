@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <vector>
 #ifdef _WIN32
 #include <share.h>
 #endif
@@ -49,9 +50,9 @@ BackupData loadPartitionBackup(const std::string& path) {
 #endif
     if (!f) { d.error = "cannot open file"; return d; }
     std::string all;
-    char buf[65536];
+    std::vector<char> buf(65536);
     size_t n;
-    while ((n = std::fread(buf, 1, sizeof buf, f)) > 0) { all.append(buf, n); if (all.size() > (8u << 20)) break; }
+    while ((n = std::fread(buf.data(), 1, buf.size(), f)) > 0) { all.append(buf.data(), n); if (all.size() > (8u << 20)) break; }
     std::fclose(f);
     size_t end = all.find("\n\n");
     if (all.compare(0, sizeof kMagic - 1, kMagic) != 0 || end == std::string::npos) { d.error = "not a Disk Pro backup"; return d; }
@@ -84,6 +85,8 @@ BackupData loadPartitionBackup(const std::string& path) {
 
 RestorePlan planRestore(const BackupData& b, const TargetFacts& t) {
     RestorePlan p;
+    p.targetSize = t.size;
+    p.sectorSize = t.sectorSize;
     p.token = "RESTORE DISK " + std::to_string(t.number);
     if (!b.ok) p.blockers.push_back("The backup file is not valid: " + b.error);
     if (t.isSystemDisk) p.blockers.push_back("Target is the SYSTEM disk: writing is forbidden.");
@@ -120,6 +123,9 @@ RestoreResult applyRestore(const BackupData& b, const RestorePlan& plan, const s
     if (!plan.allowed || !b.ok) { r.error = "operation not allowed by the plan"; return r; }
     if (typed != plan.token) { r.error = "confirmation text does not match"; return r; }
     const uint64_t size = readback.size();
+    if (size != plan.targetSize || size != b.diskSize || plan.sectorSize != b.sectorSize) {
+        r.error = "target size or sector size changed since preview"; return r;
+    }
     struct Item { uint64_t off; const std::vector<uint8_t>* data; };
     std::vector<Item> items;
     if (!b.head.empty()) items.push_back({0, &b.head});
@@ -130,6 +136,7 @@ RestoreResult applyRestore(const BackupData& b, const RestorePlan& plan, const s
         for (auto& w : plan.ranges) inPlan |= (w.offset == it.off && w.length == it.data->size());
         if (!inPlan) { r.error = "range not in plan"; return r; }
     }
+    if (!sink.prepare(0, size)) { r.error = "one or more target volumes could not be locked and dismounted"; return r; }
     for (auto& it : items) {
         r.written = true;
         if (!sink.write(it.off, it.data->data(), it.data->size())) { r.error = "write failed"; return r; }

@@ -6,6 +6,8 @@ namespace diskpro {
 
 ClonePlan planClone(const CloneSourceFacts& s, const TargetFacts& t) {
     ClonePlan p;
+    p.targetSize = t.size;
+    p.sectorSize = t.sectorSize;
     p.token = "CLONE TO DISK " + std::to_string(t.number);
     if (s.isTargetItself) p.blockers.push_back("Source and target are the same disk.");
     if (t.isSystemDisk) p.blockers.push_back("Target is the SYSTEM disk: writing is forbidden.");
@@ -31,7 +33,9 @@ CloneResult applyClone(const ByteSource& src, ByteSink& dst, const ByteSource& b
     CloneResult r;
     if (!plan.allowed || plan.bytes == 0) { r.error = "operation not allowed by the plan"; return r; }
     if (typed != plan.token) { r.error = "confirmation text does not match"; return r; }
+    if (back.size() != plan.targetSize) { r.error = "target size changed since preview"; return r; }
     if (plan.bytes > src.size() || plan.bytes > back.size()) { r.error = "plan range exceeds the disks"; return r; }
+    if (!dst.prepare(0, back.size())) { r.error = "one or more target volumes could not be locked and dismounted"; return r; }
     const uint64_t kBlock = 1u << 20, total = plan.bytes;
     std::vector<uint8_t> a(kBlock), b(kBlock);
     for (uint64_t off = 0; off < total;) {

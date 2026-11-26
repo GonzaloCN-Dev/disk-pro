@@ -16,7 +16,9 @@ public:
         std::memcpy(d.data() + off, b, n); ++writes; return true;
     }
     bool flush() override { return true; }
+    bool prepare(uint64_t, uint64_t) override { return canPrepare; }
     int writes = 0;
+    bool canPrepare = true;
 private:
     MemorySource& m_;
 };
@@ -103,6 +105,12 @@ int main() {
         f = facts(m, 512); f.isVirtual = false; CHECK(!planPartOp(m, f, init).allowed);
         f = facts(m, 512); auto plan = planPartOp(m, f, init); CHECK(plan.allowed && plan.token == "EDIT DISK 7");
         MemSink s(m);
+        MemSink unavailable(m); unavailable.canPrepare = false;
+        auto locked = applyPartOp(plan, plan.token, unavailable, m, 512);
+        CHECK(!locked.ok && !locked.written && unavailable.writes == 0);
+        MemorySource replaced(std::vector<uint8_t>((64ull << 20) + 512, 0)); MemSink replacedSink(replaced);
+        auto stale = applyPartOp(plan, plan.token, replacedSink, replaced, 512);
+        CHECK(!stale.ok && !stale.written && replacedSink.writes == 0);
         auto r = applyPartOp(plan, "wrong", s, m, 512);
         CHECK(!r.ok && !r.written && s.writes == 0);
         r = applyPartOp(plan, "edit disk 7", s, m, 512); CHECK(!r.ok && s.writes == 0);

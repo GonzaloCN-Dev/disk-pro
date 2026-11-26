@@ -21,10 +21,10 @@ private:
     uint32_t sector_ = 512;
 };
 
-// Write access to a physical drive. Only created by the restore tool after planRestore() allowed it.
+// Raw write access. Construction revalidates the preview facts and only opens an eligible virtual, non-system disk.
 class DeviceSink final : public ByteSink {
 public:
-    explicit DeviceSink(int diskNumber);
+    DeviceSink(int diskNumber, const TargetFacts& expected);
     ~DeviceSink() override;
     bool ok() const { return h_ != nullptr; }
     bool write(uint64_t off, const void* buf, size_t len) override;
@@ -40,4 +40,3 @@ private:
 };
 
 }  // namespace diskpro
-

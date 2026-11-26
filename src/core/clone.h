@@ -19,6 +19,8 @@ struct CloneSourceFacts {
 
 struct ClonePlan {
     bool allowed = false;
+    uint64_t targetSize = 0;
+    uint32_t sectorSize = 0;
     std::vector<std::string> blockers;
     std::vector<std::string> warnings;
     uint64_t bytes = 0;            // bytes that will be copied, from offset 0

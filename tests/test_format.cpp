@@ -124,6 +124,9 @@ int main() {
     { PartOp c; c.kind = PartOp::Kind::Create; c.firstLba = 2048; c.sectorCount = 100 * 2048; auto pl = planPartOp(m2, t2, c); MemSink s(m2); CHECK(applyPartOp(pl, pl.token, s, m2, 512).ok); }
     FormatOp g; g.index = 1; auto plan = planFormat(m2, t2, g); CHECK(plan.allowed);
     MemSink s2(m2);
+    MemorySource replaced(std::vector<uint8_t>((512ull << 20) + 512, 0)); MemSink replacedSink(replaced);
+    auto stale = applyFormat(plan, plan.token, replacedSink, replaced);
+    CHECK(!stale.ok && !stale.written && replacedSink.writes == 0);
     auto bad = plan; bad.writes.push_back({0, std::vector<uint8_t>(512, 1)});
     CHECK(!applyFormat(bad, bad.token, s2, m2).ok && s2.writes == 0);
     struct Liar : ByteSink { bool write(uint64_t, const void*, size_t) override { return true; } bool flush() override { return true; } } liar;

@@ -1,5 +1,6 @@
 build/
+build-analyze/
+build-asan/
 dist/
 .tools/
 installer/payload/
-.github/

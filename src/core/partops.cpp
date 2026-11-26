@@ -251,6 +251,8 @@ uint64_t alignSectors(uint32_t ss) { return ss ? (1ull << 20) / ss : 2048; }
 
 PartOpPlan planPartOp(const ByteSource& disk, const TargetFacts& t, const PartOp& op) {
     PartOpPlan p;
+    p.targetSize = t.size;
+    p.sectorSize = t.sectorSize;
     p.token = "EDIT DISK " + std::to_string(t.number);
     auto block = [&](const std::string& s) { p.blockers.push_back(s); };
     if (t.isSystemDisk) block("Target is the SYSTEM disk: writing is forbidden.");
@@ -383,6 +385,7 @@ PartOpResult applyPartOp(const PartOpPlan& plan, const std::string& typed, ByteS
     if (!plan.allowed || plan.writes.empty() || !plan.blockers.empty()) { r.error = "operation not allowed by the plan"; return r; }
     if (typed != plan.token) { r.error = "confirmation text does not match"; return r; }
     const uint64_t size = readback.size();
+    if (size != plan.targetSize || ss != plan.sectorSize) { r.error = "target size or sector size changed since preview"; return r; }
     if (size > kMaxWritableDisk || (ss != 512 && ss != 4096)) { r.error = "disk not allowed"; return r; }
     // Every write must stay inside the table areas: the first 34 sectors or the last 33.
     const uint64_t es = (uint64_t(kEntries) * kEntrySize + ss - 1) / ss;
@@ -392,6 +395,7 @@ PartOpResult applyPartOp(const PartOpPlan& plan, const std::string& typed, ByteS
         const bool inHead = w.offset + w.data.size() <= head, inTail = w.offset >= tailStart;
         if (!inHead && !inTail) { r.error = "write outside the table areas"; return r; }
     }
+    if (!sink.prepare(0, size)) { r.error = "one or more target volumes could not be locked and dismounted"; return r; }
     for (auto& w : plan.writes) {
         r.written = true;
         if (!sink.write(w.offset, w.data.data(), w.data.size())) { r.error = "write failed"; return r; }

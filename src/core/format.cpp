@@ -16,6 +16,8 @@ uint32_t log2u(uint32_t v) { uint32_t n = 0; while (v > 1) { v >>= 1; ++n; } ret
 
 FormatPlan planFormat(const ByteSource& disk, const TargetFacts& t, const FormatOp& op) {
     FormatPlan p;
+    p.targetSize = t.size;
+    p.sectorSize = t.sectorSize;
     p.token = "FORMAT DISK " + std::to_string(t.number) + " PARTITION " + std::to_string(op.index);
     auto block = [&](const std::string& s) { p.blockers.push_back(s); };
     if (t.isSystemDisk) block("Target is the SYSTEM disk: writing is forbidden.");
@@ -184,6 +186,7 @@ PartOpResult applyFormat(const FormatPlan& plan, const std::string& typed, ByteS
     if (!plan.allowed || plan.writes.empty() || !plan.blockers.empty()) { r.error = "operation not allowed by the plan"; return r; }
     if (typed != plan.token) { r.error = "confirmation text does not match"; return r; }
     const uint64_t size = readback.size();
+    if (size != plan.targetSize) { r.error = "target size changed since preview"; return r; }
     if (size > kMaxWritableDisk) { r.error = "disk not allowed"; return r; }
     for (auto& w : plan.writes) {
         if (w.data.empty() || w.offset < plan.partOffset || w.offset > plan.partOffset + plan.partLength ||

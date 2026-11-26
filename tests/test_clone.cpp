@@ -6,7 +6,7 @@ static int failures = 0;
 #define CHECK(c) do { if (!(c)) { std::printf("FAIL %s:%d %s\n", __FILE__, __LINE__, #c); ++failures; } } while (0)
 
 struct MemSink final : ByteSink {
-    MemorySource& m; uint64_t failAfter = ~0ull, writes = 0; bool corrupt = false;
+    MemorySource& m; uint64_t failAfter = ~0ull, writes = 0; bool corrupt = false, canPrepare = true;
     explicit MemSink(MemorySource& s) : m(s) {}
     bool write(uint64_t off, const void* b, size_t n) override {
         if (writes++ >= failAfter) return false;
@@ -16,6 +16,7 @@ struct MemSink final : ByteSink {
         return true;
     }
     bool flush() override { return true; }
+    bool prepare(uint64_t, uint64_t) override { return canPrepare; }
 };
 
 static std::vector<uint8_t> pattern(size_t n) { std::vector<uint8_t> v(n); for (size_t i = 0; i < n; ++i) v[i] = uint8_t((i * 31 + (i >> 8)) & 0xFF); return v; }
@@ -37,11 +38,21 @@ int main() {
 
     auto plan = planClone(s, target(4 * MB));
     MemorySource src(pattern(size_t(s.size)));
+    { // target replaced after preview
+        MemorySource dm(std::vector<uint8_t>(5 * MB, 0xEE)); MemSink sk(dm);
+        auto r = applyClone(src, sk, dm, plan, plan.token, nullptr);
+        CHECK(!r.ok && !r.written && sk.writes == 0);
+    }
 
     { // wrong token writes nothing
         MemorySource dm(std::vector<uint8_t>(4 * MB, 0xEE)); MemSink sk(dm);
         auto r = applyClone(src, sk, dm, plan, "clone to disk 5", nullptr);
         CHECK(!r.ok && !r.written && dm.bytes()[0] == 0xEE);
+    }
+    { // mounted/in-use target writes nothing
+        MemorySource dm(std::vector<uint8_t>(4 * MB, 0xEE)); MemSink sk(dm); sk.canPrepare = false;
+        auto r = applyClone(src, sk, dm, plan, plan.token, nullptr);
+        CHECK(!r.ok && !r.written && sk.writes == 0);
     }
     { // disallowed plan writes nothing
         auto bad = planClone(s, target(2 * MB));

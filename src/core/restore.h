@@ -56,6 +56,8 @@ struct WriteRange { uint64_t offset = 0, length = 0; };
 
 struct RestorePlan {
     bool allowed = false;
+    uint64_t targetSize = 0;
+    uint32_t sectorSize = 0;
     std::vector<std::string> blockers;  // any entry forbids the operation
     std::vector<std::string> warnings;
     std::vector<WriteRange> ranges;

@@ -17,7 +17,10 @@ int main(int argc, char** argv) {
     long n = std::strtol(argv[2], &e, 10);
     if (*e || n < 0) { std::fprintf(stderr, "invalid disk number\n"); return 2; }
     std::string typed;
-    for (int i = 3; i + 1 < argc; ++i) if (!std::strcmp(argv[i], "--confirm")) typed = argv[i + 1];
+    for (int i = 3; i < argc; ++i) {
+        if (!std::strcmp(argv[i], "--confirm") && i + 1 < argc) typed = argv[++i];
+        else { std::fprintf(stderr, "unknown or incomplete argument: %s\n", argv[i]); return 2; }
+    }
 
     auto bak = loadPartitionBackup(argv[1]);
     const win::DiskInfo* disk = nullptr;
@@ -47,7 +50,7 @@ int main(int argc, char** argv) {
     if (typed.empty()) { std::printf("Nothing written. To apply, run again with: --confirm \"%s\"\n", plan.token.c_str()); return 0; }
     if (typed != plan.token) { std::printf("Confirmation text does not match. Nothing written.\n"); return 3; }
 
-    DeviceSink sink{static_cast<int>(n)};
+    DeviceSink sink{static_cast<int>(n), t};
     if (!sink.ok()) { std::fprintf(stderr, "cannot open disk for writing (administrator?)\n"); return 1; }
     auto res = applyRestore(bak, plan, typed, sink, src);
     sink.refreshLayout();

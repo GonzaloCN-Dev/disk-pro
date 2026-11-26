@@ -26,7 +26,9 @@ std::string buildReport(const std::vector<DiskInfo>& disks, const std::vector<st
         for (const auto& p : d.partitions) {
             o += "  Partition " + std::to_string(p.number) + ": offset " + std::to_string(p.offsetBytes) + ", " + size(p.lengthBytes) + ", " + p.typeName;
             if (!p.filesystem.empty()) o += ", " + p.filesystem;
+            if (!p.volumeLabel.empty()) o += ", label " + p.volumeLabel;
             if (!p.volume.empty()) o += ", " + p.volume;
+            if (p.volumeTotalBytes) o += ", free " + size(p.volumeFreeBytes) + " / " + size(p.volumeTotalBytes);
             o += "\r\n";
         }
         o += "\r\n";

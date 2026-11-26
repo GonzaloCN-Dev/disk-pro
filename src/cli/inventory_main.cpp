@@ -23,6 +23,10 @@ int main() {
                 std::printf("   health: NVMe warn=0x%02X temp=%dC spare=%u%% used=%u%% poh=%llu unsafe=%llu mediaErr=%llu\n", h.criticalWarning,
                             h.temperatureC, h.availableSparePct, h.percentageUsed, (unsigned long long)h.powerOnHours,
                             (unsigned long long)h.unsafeShutdowns, (unsigned long long)h.mediaErrors);
+            if (h.ataAvailable)
+                std::printf("   health: ATA SMART temp=%dC poh=%llu reallocated=%llu pending=%llu uncorrectable=%llu\n",
+                            h.temperatureC, (unsigned long long)h.powerOnHours, (unsigned long long)h.reallocatedSectors,
+                            (unsigned long long)h.pendingSectors, (unsigned long long)h.uncorrectableSectors);
             if (h.predictFailureAvailable) std::printf("   predict-failure: %s\n", h.predictFailure ? "YES" : "no");
             if (!h.note.empty()) std::printf("   health: %s\n", h.note.c_str());
         }

@@ -21,8 +21,9 @@ tests                    Unit tests + VHD integration scripts (disposable disks 
 - Win32 inventory is covered by manual/VHD tests, not unit tests.
 - UI font glyph fallback for some symbols depends on the system.
 
-## Phased plan
-1. Read-only MVP (done). 2. Write engine: create/delete, format, resize, move. 3. Clone/image. 4. Sector scan + recovery (to another drive only). Each phase tested on disposable VHDs only.
+## Product roadmap
+
+The product plan, phases, acceptance criteria, and safety gates are maintained in [`ROADMAP.md`](../ROADMAP.md). The roadmap does not authorize physical-disk writes or relax the current VHD size limit.
 
 ## Risks
 Data loss in write phases; FS-aware resize needs a library with a compatible license (else unsupported, never simulated); SMART varies by driver/bridge.

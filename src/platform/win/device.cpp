@@ -1,5 +1,6 @@
 ﻿// Disk Pro - MIT License - Copyright (c) Gonzalo Cruz Núñez
 #include "device.h"
+#include "inventory.h"
 #include <windows.h>
 #include <winioctl.h>
 #include <string>
@@ -45,16 +46,35 @@ bool DeviceSource::read(uint64_t off, void* buf, size_t len) const {
     return true;
 }
 
-DeviceSink::DeviceSink(int n) {
+DeviceSink::DeviceSink(int n, const TargetFacts& expected) {
     if (n < 0 || n > 4095) return;
+    if (expected.number != uint32_t(n) || expected.isSystemDisk || !expected.isVirtual ||
+        expected.size == 0 || expected.size > kMaxWritableDisk) return;
+    const win::DiskInfo* current = nullptr;
+    auto disks = win::enumerateDisks();
+    for (const auto& d : disks) if (d.number == uint32_t(n)) current = &d;
+    if (!current || current->isSystemDisk || !current->isVirtual || current->sizeBytes != expected.size) return;
+    const uint32_t expectedSector = expected.sectorSize ? expected.sectorSize : 512;
+    if (current->logicalSector && current->logicalSector != expectedSector) return;
     std::wstring path = L"\\\\.\\PhysicalDrive" + std::to_wstring(n);
     HANDLE h = CreateFileW(path.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING,
                            FILE_FLAG_WRITE_THROUGH, nullptr);
     if (h == INVALID_HANDLE_VALUE) return;
+    STORAGE_PROPERTY_QUERY q{};
+    q.PropertyId = StorageDeviceProperty;
+    q.QueryType = PropertyStandardQuery;
+    alignas(8) BYTE property[1024]{};
+    DWORD propertyBytes = 0;
+    if (!DeviceIoControl(h, IOCTL_STORAGE_QUERY_PROPERTY, &q, sizeof q, property, sizeof property, &propertyBytes, nullptr)) {
+        CloseHandle(h); return;
+    }
+    const auto bus = reinterpret_cast<STORAGE_DEVICE_DESCRIPTOR*>(property)->BusType;
+    if (bus != BusTypeVirtual && bus != BusTypeFileBackedVirtual) { CloseHandle(h); return; }
     DISK_GEOMETRY_EX g{};
     DWORD got = 0;
     if (!DeviceIoControl(h, IOCTL_DISK_GET_DRIVE_GEOMETRY_EX, nullptr, 0, &g, sizeof g, &got, nullptr) || g.DiskSize.QuadPart <= 0 ||
-        g.Geometry.BytesPerSector == 0) {
+        g.Geometry.BytesPerSector == 0 || uint64_t(g.DiskSize.QuadPart) != expected.size ||
+        g.Geometry.BytesPerSector != expectedSector) {
         CloseHandle(h);
         return;
     }
@@ -71,10 +91,11 @@ DeviceSink::~DeviceSink() {
 // Locks and dismounts every volume that lives (even partly) in [offset, offset+length) of this disk, so that Windows
 // does not block the raw write or overwrite the new file system with its cached copy. Handles stay open until destruction.
 bool DeviceSink::prepare(uint64_t offset, uint64_t length) {
-    if (!h_ || disk_ < 0) return false;
+    if (!h_ || disk_ < 0 || offset > size_ || length > size_ - offset) return false;
+    const uint64_t rangeEnd = offset + length;
     wchar_t name[MAX_PATH];
     HANDLE find = FindFirstVolumeW(name, MAX_PATH);
-    if (find == INVALID_HANDLE_VALUE) return true;
+    if (find == INVALID_HANDLE_VALUE) return false;
     bool ok = true;
     do {
         std::wstring path = name;
@@ -82,7 +103,7 @@ bool DeviceSink::prepare(uint64_t offset, uint64_t length) {
         HANDLE v = CreateFileW(path.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
         if (v == INVALID_HANDLE_VALUE) {
             v = CreateFileW(path.c_str(), 0, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);   // query only
-            if (v == INVALID_HANDLE_VALUE) continue;
+            if (v == INVALID_HANDLE_VALUE) { ok = false; continue; }
         }
         std::vector<uint8_t> buf(4096);
         DWORD got = 0;
@@ -93,9 +114,10 @@ bool DeviceSink::prepare(uint64_t offset, uint64_t length) {
                 const auto& x = e->Extents[i];
                 if (int(x.DiskNumber) != disk_) continue;
                 uint64_t s = uint64_t(x.StartingOffset.QuadPart), l = uint64_t(x.ExtentLength.QuadPart);
-                if (s < offset + length && offset < s + l) mine = true;
+                const uint64_t extentEnd = l > UINT64_MAX - s ? UINT64_MAX : s + l;
+                if (s < rangeEnd && offset < extentEnd) mine = true;
             }
-        }
+        } else { ok = false; CloseHandle(v); continue; }
         if (!mine) { CloseHandle(v); continue; }
         if (!DeviceIoControl(v, FSCTL_LOCK_VOLUME, nullptr, 0, nullptr, 0, &got, nullptr) ||
             !DeviceIoControl(v, FSCTL_DISMOUNT_VOLUME, nullptr, 0, nullptr, 0, &got, nullptr)) {
@@ -105,6 +127,7 @@ bool DeviceSink::prepare(uint64_t offset, uint64_t length) {
         }
         locked_.push_back(v);
     } while (FindNextVolumeW(find, name, MAX_PATH));
+    if (GetLastError() != ERROR_NO_MORE_FILES) ok = false;
     FindVolumeClose(find);
     return ok;
 }
@@ -127,4 +150,3 @@ bool DeviceSink::flush() { return h_ && FlushFileBuffers(h_) != 0; }
 void DeviceSink::refreshLayout() { DWORD got = 0; if (h_) DeviceIoControl(h_, IOCTL_DISK_UPDATE_PROPERTIES, nullptr, 0, nullptr, 0, &got, nullptr); }
 
 }  // namespace diskpro
-

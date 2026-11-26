@@ -3,8 +3,10 @@
 //   diskpro-part --disk N <op> [options] [--confirm "EDIT DISK N"]
 //   ops: init-mbr | init-gpt | create --start LBA --sectors N [--type T] [--name X]
 //        delete --index I | settype --index I --type T | setactive --index I
-//        resize --index I --start LBA --sectors N | merge --index I --index2 J\n//        format --index I [--fs fat32] [--label X]   (token: "FORMAT DISK N PARTITION I")
-// Needs administrator. Refuses: system disk, non-virtual disk, > 4 GiB, mounted volumes. Never touches file systems.
+//        resize --index I --start LBA --sectors N | merge --index I --index2 J
+//        format --index I [--fs fat32|exfat] [--label X]
+// Table edits use "EDIT DISK N"; format uses "FORMAT DISK N PARTITION I".
+// Needs administrator. Refuses: system disk, non-virtual disk, > 4 GiB, mounted volumes for table edits.
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -33,6 +35,7 @@ int main(int argc, char** argv) {
         else if (has("--start")) start = std::strtoull(argv[++i], nullptr, 10);
         else if (has("--sectors")) sectors = std::strtoull(argv[++i], nullptr, 10);
         else if (argv[i][0] != '-' && op.empty()) op = argv[i];
+        else { std::fprintf(stderr, "unknown or incomplete argument: %s\n", argv[i]); return 2; }
     }
     const bool isFormat = op == "format";
     PartOp p;
@@ -43,7 +46,9 @@ int main(int argc, char** argv) {
     else if (op == "resize") p.kind = K::Resize; else if (op == "merge") p.kind = K::Merge;
     else if (isFormat) {}
     else {
-        std::fprintf(stderr, "usage: diskpro-part --disk N (init-mbr|init-gpt|create|delete|settype|setactive|resize|merge|format) [options] [--confirm \"EDIT DISK N\"]\n");
+        std::fprintf(stderr, "usage: diskpro-part --disk N (init-mbr|init-gpt|create|delete|settype|setactive|resize|merge|format) [options] [--confirm TOKEN]\n"
+                             "       table edit token: \"EDIT DISK N\"; format token: \"FORMAT DISK N PARTITION I\"\n"
+                             "       format options: --fs fat32|exfat [--label LABEL]\n");
         return 2;
     }
     if (disk < 0) { std::fprintf(stderr, "--disk is required\n"); return 2; }
@@ -80,7 +85,7 @@ int main(int argc, char** argv) {
     if (!plan.allowed) { std::printf("RESULT: not allowed\n"); return 3; }
     if (typed.empty()) { std::printf("Nothing written. To apply, run again with: --confirm \"%s\"\n", plan.token.c_str()); return 0; }
     if (typed != plan.token) { std::printf("Confirmation text does not match. Nothing written.\n"); return 3; }
-    DeviceSink sink{static_cast<int>(disk)};
+    DeviceSink sink{static_cast<int>(disk), t};
     if (!sink.ok()) { std::fprintf(stderr, "cannot open the disk for writing (administrator?)\n"); return 1; }
     auto res = isFormat ? applyFormat(fplan, typed, sink, src) : applyPartOp(plan, typed, sink, src, t.sectorSize);
     sink.refreshLayout();
