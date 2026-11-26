@@ -61,6 +61,12 @@ export global Tr {
     in property <string> report;
     in property <string> t-ptb;
     in property <string> t-restore;
+    in property <string> act-analyze;
+    in property <string> act-lost;
+    in property <string> act-files;
+    in property <string> act-format;
+    in property <string> act-partition;
+    in property <string> advanced;
     in property <string> t-apply;
     in property <string> plan-title;
     in property <string> plan-reset;
@@ -98,6 +104,7 @@ export global Tr {
 component ToolBtn inherits Rectangle {
     in property <string> label;
     in property <string> icon;
+    in property <color> tint: Palette.accent-foreground;
     in property <bool> enabled: true;
     callback clicked();
     width: max(64px, lbl.preferred-width + 14px);
@@ -114,7 +121,7 @@ component ToolBtn inherits Rectangle {
             Path {
                 width: 30px; height: 30px; viewbox-width: 24; viewbox-height: 24;
                 commands: root.icon;
-                stroke: Palette.foreground; stroke-width: 1.7px;
+                stroke: root.tint; stroke-width: 1.9px;
                 stroke-line-cap: round; stroke-line-join: round;
             }
         }
@@ -177,6 +184,7 @@ export component MainWindow inherits Window {
     in property <string> health-text;
     in property <bool> loading: true;
     in-out property <bool> show-tools: false;
+    in-out property <int> task-mode: 0;
     in property <string> source-label;
     in property <bool> tool-busy: false;
     in property <float> tool-progress: 0;
@@ -252,7 +260,7 @@ export component MainWindow inherits Window {
             MenuItem { title: Tr.t-ptb; enabled: root.selected >= 0; activated => { root.show-tools = true; root.tool-run("ptbackup", ""); } }
         }
         Menu {
-            title: Tr.tools;
+            title: Tr.advanced;
             MenuItem { title: Tr.t-hash; activated => { root.show-tools = true; root.tool-run("hash", ""); } }
             MenuItem { title: Tr.t-image; activated => { root.show-tools = true; root.tool-run("image", ""); } }
             MenuItem { title: Tr.t-recover; activated => { root.show-tools = true; root.tool-run("recover", ""); } }
@@ -291,9 +299,11 @@ export component MainWindow inherits Window {
                 ToolBtn { label: Tr.refresh; icon: "M20 12a8 8 0 1 1-2.3-5.6 M20 4v5h-5"; enabled: !root.loading; clicked => { root.refresh(); } }
                 ToolBtn { label: Tr.report; icon: "M6 3h8l4 4v14H6z M14 3v4h4 M9 12h6 M9 16h6"; enabled: !root.loading && root.disks.length > 0; clicked => { root.export-report(); } }
                 Rectangle { width: 1px; background: Palette.border; }
-                ToolBtn { label: Tr.tb-clone; icon: "M8 8h12v12H8z M4 4h12v4 M4 4v12h4"; enabled: root.selected >= 0; clicked => { root.show-tools = true; } }
-                ToolBtn { label: Tr.tb-restore; icon: "M4 12a8 8 0 1 0 2.3-5.6 M4 4v5h5"; enabled: root.selected >= 0; clicked => { root.show-tools = true; } }
-                ToolBtn { label: Tr.tools; icon: "M9 4 7 20 M17 4 15 20 M4 9h16 M3 15h16"; clicked => { root.show-tools = !root.show-tools; } }
+                ToolBtn { label: Tr.act-analyze; tint: #1687d9; icon: "M3 12s3-7 9-7 9 7 9 7-3 7-9 7-9-7-9-7z M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"; enabled: root.selected >= 0; clicked => { root.ctx-action("scan", -1); } }
+                ToolBtn { label: Tr.act-lost; tint: #7956c8; icon: "M4 5h16v14H4z M8 9h8 M8 13h5 M16 16l2 2"; enabled: root.selected >= 0; clicked => { root.ctx-action("recover", -1); } }
+                ToolBtn { label: Tr.act-files; tint: #20976b; icon: "M6 3h9l4 4v14H6z M15 3v5h4 M9 13h7 M9 17h5"; enabled: root.selected >= 0 && root.part-sel >= 0; clicked => { root.ctx-action("files", root.part-sel); } }
+                ToolBtn { label: Tr.act-format; tint: #d38720; icon: "M4 5h16v14H4z M8 9h8 M8 13h8 M8 17h4"; enabled: root.selected >= 0 && root.part-sel >= 0; clicked => { root.ctx-action("p:format", root.part-sel); } }
+                ToolBtn { label: Tr.act-partition; tint: #e06464; icon: "M4 4h16v16H4z M12 4v16 M4 12h8"; enabled: root.selected >= 0; clicked => { root.ctx-action("p:create", -1); } }
                 Rectangle { width: 1px; background: Palette.border; }
                 ToolBtn { label: Tr.settings; icon: "M4 7h10 M18 7h2 M4 17h2 M10 17h10 M16 5v4 M8 15v4"; clicked => { root.show-settings = true; } }
                 ToolBtn { label: Tr.about; icon: "M12 3a9 9 0 1 0 .001 0z M12 11v6 M12 7.5v.5"; clicked => { root.show-about = true; } }
@@ -490,8 +500,8 @@ export component MainWindow inherits Window {
                     background: Palette.alternate-background;
                     HorizontalLayout {
                         alignment: start;
-                        TabBtn { label: Tr.partitions; active: !root.show-tools; clicked => { root.show-tools = false; } }
-                        TabBtn { label: Tr.tools; active: root.show-tools; clicked => { root.show-tools = true; } }
+                        TabBtn { label: Tr.partitions; active: !root.show-tools; clicked => { root.show-tools = false; root.task-mode = 0; } }
+                        TabBtn { label: root.task-mode == 0 ? Tr.advanced : Tr.t-back; active: root.show-tools; clicked => { root.show-tools = root.task-mode == 0; root.task-mode = 0; } }
                     }
                 }
                 Rectangle { height: 1px; background: Palette.border; }
@@ -588,8 +598,15 @@ export component MainWindow inherits Window {
                     if root.show-tools: VerticalLayout {
                         spacing: 8px;
                         Section { text: root.source-label; }
-                        Text { text: Tr.t-note; color: Palette.foreground.with-alpha(0.7); font-size: 11px; wrap: word-wrap; }
-                        HorizontalLayout {
+                        if root.task-mode == 1: Section { text: Tr.act-analyze; }
+                        if root.task-mode == 2: Section { text: Tr.act-lost; }
+                        if root.task-mode == 3: Section { text: Tr.act-files; }
+                        if root.task-mode == 4: Section { text: Tr.act-format; }
+                        if root.task-mode == 5: Section { text: Tr.act-partition; }
+                        Text { text: Tr.t-note; color: Palette.foreground.with-alpha(0.7); font-size: 11px; wrap: word-wrap; visible: root.task-mode == 0 || root.task-mode == 4 || root.task-mode == 5; }
+                        if root.task-mode == 0: VerticalLayout {
+                          spacing: 8px;
+                          HorizontalLayout {
                             spacing: 8px;
                             Button { text: Tr.t-open; enabled: !root.tool-busy; clicked => { root.tool-open-file(); } }
                             Button { text: Tr.t-hash; enabled: !root.tool-busy; clicked => { root.tool-run("hash", ""); } }
@@ -598,44 +615,44 @@ export component MainWindow inherits Window {
                             Button { text: Tr.t-recover; enabled: !root.tool-busy; clicked => { root.tool-run("recover", ""); } }
                             Button { text: Tr.t-ptb; enabled: !root.tool-busy; clicked => { root.tool-run("ptbackup", ""); } }
                             Button { text: Tr.t-cancel; enabled: root.tool-busy; clicked => { root.tool-cancel(); } }
-                        }
-                        HorizontalLayout {
+                          }
+                          HorizontalLayout {
                             spacing: 8px;
                             Text { text: Tr.t-offset; color: Palette.foreground; vertical-alignment: center; }
                             LineEdit { width: 160px; text <=> root.hex-offset; accessible-label: Tr.t-offset; }
                             Button { text: Tr.t-hex; enabled: !root.tool-busy; clicked => { root.tool-run("hex", root.hex-offset); } }
                             Button { text: Tr.t-prev; enabled: !root.tool-busy; clicked => { root.tool-run("hexprev", root.hex-offset); } }
                             Button { text: Tr.t-next; enabled: !root.tool-busy; clicked => { root.tool-run("hexnext", root.hex-offset); } }
-                        }
-                        HorizontalLayout {
+                          }
+                          HorizontalLayout {
                             spacing: 8px;
                             Button { text: Tr.t-files; enabled: !root.tool-busy; clicked => { root.tool-run("files", ""); } }
                             LineEdit { width: 60px; text <=> root.recovery-candidate; accessible-label: Tr.t-extract; }
                             Button { text: Tr.t-extract; enabled: !root.tool-busy; clicked => { root.tool-run("extract", root.recovery-candidate); } }
-                        }
-                        HorizontalLayout {
+                          }
+                          HorizontalLayout {
                             spacing: 8px;
                             Button { text: Tr.t-restore; enabled: !root.tool-busy; clicked => { root.restore-preview(); } }
                             LineEdit { horizontal-stretch: 1; enabled: root.restore-ready; placeholder-text: Tr.t-confirm-hint; text <=> root.restore-confirm; accessible-label: Tr.t-confirm-hint; }
                             Button { text: Tr.t-apply; enabled: root.restore-ready && !root.tool-busy; clicked => { root.restore-apply(root.restore-confirm); } }
-                        }
-                        HorizontalLayout {
+                          }
+                          HorizontalLayout {
                             spacing: 8px;
                             Text { text: Tr.t-clone-target; color: Palette.foreground; vertical-alignment: center; }
                             LineEdit { width: 60px; text <=> root.clone-target; accessible-label: Tr.t-clone-target; }
                             Button { text: Tr.t-clone; enabled: !root.tool-busy; clicked => { root.clone-preview(root.clone-target); } }
                             LineEdit { horizontal-stretch: 1; enabled: root.clone-ready; placeholder-text: Tr.t-confirm-hint; text <=> root.clone-confirm; accessible-label: Tr.t-confirm-hint; }
                             Button { text: Tr.t-clone-apply; enabled: root.clone-ready && !root.tool-busy; clicked => { root.clone-apply(root.clone-confirm); } }
-                        }
-                        HorizontalLayout {
+                          }
+                          HorizontalLayout {
                             spacing: 8px;
                             Text { text: Tr.t-vhd-size; color: Palette.foreground; vertical-alignment: center; }
                             LineEdit { width: 80px; text <=> root.vhd-size; accessible-label: Tr.t-vhd-size; }
                             Button { text: Tr.t-vhd-create; enabled: !root.tool-busy; clicked => { root.vhd-create(); } }
                             Button { text: Tr.t-vhd-attach; enabled: !root.tool-busy; clicked => { root.vhd-attach(); } }
                             Button { text: Tr.t-vhd-detach; enabled: !root.tool-busy; clicked => { root.vhd-detach(); } }
-                        }
-                        HorizontalLayout {
+                          }
+                          HorizontalLayout {
                             spacing: 8px;
                             Text { text: Tr.e-start; color: Palette.foreground; vertical-alignment: center; }
                             LineEdit { width: 70px; text <=> root.edit-start; accessible-label: Tr.e-start; }
@@ -645,13 +662,53 @@ export component MainWindow inherits Window {
                             LineEdit { width: 90px; text <=> root.edit-type; accessible-label: Tr.e-type; }
                             Button { text: Tr.c-ops[1]; enabled: !root.tool-busy; clicked => { root.part-preview("create", -1); } }
                             Button { text: Tr.c-ops[2]; enabled: !root.tool-busy; clicked => { root.part-preview("resize", root.part-sel); } }
-                        }
-                        HorizontalLayout {
+                          }
+                          HorizontalLayout {
                             spacing: 8px;
                             Text { text: Tr.e-preview; color: Palette.foreground; vertical-alignment: center; }
                             LineEdit { horizontal-stretch: 1; enabled: root.part-ready; placeholder-text: Tr.t-confirm-hint; text <=> root.part-confirm; accessible-label: Tr.t-confirm-hint; }
                             Button { text: Tr.e-apply; enabled: root.part-ready && !root.tool-busy; clicked => { root.part-apply(root.part-confirm); } }
+                          }
                         }
+                        if root.task-mode == 3: HorizontalLayout {
+                            spacing: 8px;
+                            LineEdit { width: 70px; text <=> root.recovery-candidate; accessible-label: Tr.t-extract; }
+                            Button { text: Tr.t-extract; enabled: !root.tool-busy; clicked => { root.tool-run("extract", root.recovery-candidate); } }
+                        }
+                        if root.task-mode == 4: VerticalLayout {
+                            spacing: 6px;
+                            Section { text: Tr.act-format + " · " + Tr.c-part; }
+                            HorizontalLayout {
+                                spacing: 8px;
+                                Button { text: Tr.c-future[0]; enabled: !root.tool-busy; clicked => { root.part-preview("format", root.part-sel); } }
+                                Button { text: Tr.c-future[1]; enabled: !root.tool-busy; clicked => { root.part-preview("format-exfat", root.part-sel); } }
+                            }
+                            HorizontalLayout {
+                                spacing: 8px;
+                                LineEdit { horizontal-stretch: 1; enabled: root.part-ready; placeholder-text: Tr.t-confirm-hint; text <=> root.part-confirm; accessible-label: Tr.t-confirm-hint; }
+                                Button { text: Tr.e-apply; enabled: root.part-ready && !root.tool-busy; clicked => { root.part-apply(root.part-confirm); } }
+                            }
+                        }
+                        if root.task-mode == 5: VerticalLayout {
+                            spacing: 6px;
+                            Section { text: Tr.act-partition; }
+                            HorizontalLayout {
+                                spacing: 8px;
+                                Text { text: Tr.e-start; color: Palette.foreground; vertical-alignment: center; }
+                                LineEdit { width: 80px; text <=> root.edit-start; accessible-label: Tr.e-start; }
+                                Text { text: Tr.e-size; color: Palette.foreground; vertical-alignment: center; }
+                                LineEdit { width: 80px; text <=> root.edit-size; accessible-label: Tr.e-size; }
+                                Text { text: Tr.e-type; color: Palette.foreground; vertical-alignment: center; }
+                                LineEdit { width: 90px; text <=> root.edit-type; accessible-label: Tr.e-type; }
+                                Button { text: Tr.e-preview; enabled: !root.tool-busy; clicked => { root.part-preview("create", -1); } }
+                            }
+                            HorizontalLayout {
+                                spacing: 8px;
+                                LineEdit { horizontal-stretch: 1; enabled: root.part-ready; placeholder-text: Tr.t-confirm-hint; text <=> root.part-confirm; accessible-label: Tr.t-confirm-hint; }
+                                Button { text: Tr.e-apply; enabled: root.part-ready && !root.tool-busy; clicked => { root.part-apply(root.part-confirm); } }
+                            }
+                        }
+                        if root.task-mode == 1 || root.task-mode == 2: Button { text: Tr.t-cancel; enabled: root.tool-busy; clicked => { root.tool-cancel(); } }
                         Rectangle {
                             height: 14px;
                             border-width: 1px; border-color: Palette.border;
@@ -753,7 +810,3 @@ export component MainWindow inherits Window {
         }
     }
 }
-
-
-
-

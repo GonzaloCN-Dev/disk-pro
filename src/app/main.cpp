@@ -212,6 +212,7 @@ int main(int argc, char** argv) {
         auto diags = vec<DiagRow>();
         *selected = visIdx;
         ui->set_selected(visIdx);
+        ui->set_part_sel(-1); // never carry a partition action onto another selected disk
         if (visIdx >= 0 && visIdx < int(st->visible.size())) {
             int di = st->visible[visIdx];
             const auto& d = st->disks[di];
@@ -339,6 +340,10 @@ int main(int argc, char** argv) {
     ui->on_ctx_action([ui, st, selected, partRange](slint::SharedString a, int pi) {
         std::string act(a);
         ui->set_show_tools(true);
+        const int taskMode = act == "scan" ? 1 : act == "recover" ? 2 : act == "files" ? 3 :
+                             (act == "p:format" || act == "p:format-exfat") ? 4 :
+                             act == "p:create" ? 5 : 0;
+        ui->set_task_mode(taskMode);
         if (act.rfind("p:", 0) == 0) { ui->invoke_part_preview(slint::SharedString(act.substr(2)), pi); return; }
         if (act == "clone") return;
         if (act == "restore") { ui->invoke_restore_preview(); return; }
@@ -364,6 +369,12 @@ int main(int argc, char** argv) {
         g.set_t_hex(S(s.hex)); g.set_t_open(S(s.open)); g.set_t_cancel(S(s.cancel)); g.set_t_prev(S(s.prev));
         g.set_t_next(S(s.next)); g.set_t_offset(S(s.offset)); g.set_t_back(S(s.back)); g.set_t_ptb(S(lang == 1 ? "Back up partition table…" : "Copia de la tabla de particiones…")); g.set_t_note(S(s.note));
         g.set_t_restore(S(lang == 1 ? "Restore table (VHD only)…" : "Restaurar tabla (solo VHD)…"));
+        g.set_act_analyze(S(lang == 1 ? "Analyze" : "Analizar"));
+        g.set_act_lost(S(lang == 1 ? "Find partitions" : "Particiones perdidas"));
+        g.set_act_files(S(lang == 1 ? "Recover files" : "Recuperar archivos"));
+        g.set_act_format(S(lang == 1 ? "Format" : "Formatear"));
+        g.set_act_partition(S(lang == 1 ? "Partition" : "Particionar"));
+        g.set_advanced(S(lang == 1 ? "Advanced tools" : "Herramientas avanzadas"));
         g.set_t_apply(S(lang == 1 ? "Apply restore" : "Aplicar restauración"));
         g.set_m_file(S(lang == 1 ? "File" : "Archivo")); g.set_m_disk(S(lang == 1 ? "Disk" : "Disco")); g.set_m_view(S(lang == 1 ? "View" : "Ver"));
         g.set_m_help(S(lang == 1 ? "Help" : "Ayuda")); g.set_m_exit(S(lang == 1 ? "Exit" : "Salir"));
@@ -778,10 +789,16 @@ int main(int argc, char** argv) {
                 }
             } else if (cmd == "extract") {
                 const auto file = pendingRecovery->files[recoveryIndex];
-                FileRecoverResult r = recoverFat32FileToNewFile(*src, file, outPath, *cancelFlag, prog);
-                if (r.cancelled) result = s.cancelled;
-                else if (!r.ok) result = "Error: " + r.error;
-                else result = std::string(s.done) + "\n" + file.path + "\n" + outPath + "\nSHA-256: " + r.sha256 + "\n" + humanSize(r.bytes);
+                std::string outputGuardError;
+                if (src->backingDiskNumber() >= 0 &&
+                    !pathOnPhysicalDisk(outPath, src->backingDiskNumber(), outputGuardError)) {
+                    result = "Error: " + outputGuardError;
+                } else {
+                    FileRecoverResult r = recoverFat32FileToNewFile(*src, file, outPath, *cancelFlag, prog);
+                    if (r.cancelled) result = s.cancelled;
+                    else if (!r.ok) result = "Error: " + r.error;
+                    else result = std::string(s.done) + "\n" + file.path + "\n" + outPath + "\nSHA-256: " + r.sha256 + "\n" + humanSize(r.bytes);
+                }
             } else {
                 ScanResult r = surfaceScan(*src, *cancelFlag, prog);
                 if (r.cancelled) result = s.cancelled;

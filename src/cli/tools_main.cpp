@@ -92,6 +92,14 @@ int main(int argc, char** argv) {
         }
         long candidate = std::strtol(argv[4], &end, 10);
         if (*end || candidate < 1 || candidate > long(scan.files.size())) { std::fprintf(stderr, "candidate index does not exist\n"); return 2; }
+#ifdef _WIN32
+        std::string outputGuardError;
+        if (volume->backingDiskNumber() >= 0 &&
+            !pathOnPhysicalDisk(argv[5], volume->backingDiskNumber(), outputGuardError)) {
+            std::fprintf(stderr, "error: %s\n", outputGuardError.c_str());
+            return 1;
+        }
+#endif
         auto recovered = recoverFat32FileToNewFile(*volume, scan.files[size_t(candidate - 1)], argv[5], cancel, prog);
         if (!recovered.ok) { std::fprintf(stderr, "\nerror: %s\n", recovered.error.c_str()); return 1; }
         std::fprintf(stderr, "\n");

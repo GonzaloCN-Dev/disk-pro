@@ -8,7 +8,7 @@
 #include <string>
 
 struct Settings {
-    int theme = 0, density = 1, language = 0;
+    int theme = 1, density = 1, language = 0;
     bool autoUpdate = false;         // opt-in: off until the user turns it on
     long long lastUpdateCheck = 0;   // unix seconds
 

@@ -270,6 +270,18 @@ FileRecoverResult recoverFat32File(const ByteSource& volume, const RecoverableFi
                                    const ProgressFn& progress) {
     FileRecoverResult result;
     if (!write) { result.error = "output callback is missing"; return result; }
+    const auto freshScan = findDeletedFat32Files(volume, cancel);
+    if (freshScan.cancelled) { result.cancelled = true; result.error = "cancelled"; return result; }
+    if (!freshScan.ok) { result.error = "cannot revalidate deleted-file candidates: " + freshScan.error; return result; }
+    const auto current = std::find_if(freshScan.files.begin(), freshScan.files.end(), [&](const RecoverableFile& candidate) {
+        return candidate.directoryEntryOffset == file.directoryEntryOffset && candidate.path == file.path &&
+               candidate.size == file.size && candidate.firstCluster == file.firstCluster &&
+               candidate.clusters == file.clusters;
+    });
+    if (current == freshScan.files.end()) {
+        result.error = "candidate is no longer safe: its entry changed or its clusters are now referenced";
+        return result;
+    }
     Fat32 f;
     if (!loadFat32(volume, f, result.error)) return result;
     uint8_t e[32]{};
@@ -323,6 +335,18 @@ FileRecoverResult recoverFat32FileToNewFile(const ByteSource& volume, const Reco
                                             const ProgressFn& progress) {
     namespace fs = std::filesystem;
     FileRecoverResult result;
+    const std::string backing = volume.backingFilePath();
+    if (!backing.empty()) {
+        std::error_code ec;
+        const fs::path sourcePath = fs::weakly_canonical(fs::absolute(fs::u8path(backing), ec), ec);
+        if (ec) { result.error = "cannot safely identify the source image path"; return result; }
+        ec.clear();
+        const fs::path outputPath = fs::weakly_canonical(fs::absolute(fs::u8path(outPath), ec), ec);
+        if (!ec && (sourcePath == outputPath || fs::equivalent(sourcePath, outputPath, ec))) {
+            result.error = "output path is the source image; choose another destination";
+            return result;
+        }
+    }
     std::FILE* out = nullptr;
 #ifdef _WIN32
     out = _wfopen(fs::u8path(outPath).c_str(), L"wbx");

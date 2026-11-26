@@ -17,7 +17,7 @@
 - Instalador: `installer/DiskPro.iss` + `installer/build-installer.ps1` (Inno Setup 6.7.x, mismo patrón que db-pro/rclone-lite). Sin firmar.
 
 ## Estado
-0.6.0: lectura, inventario Win32, SMART NVMe/ATA, GUI Slint y CLI; restauración, clonación, edición de tabla y formato FAT32/exFAT limitados a VHD <=4 GiB. Búsqueda de particiones perdidas y recuperación limitada de borrados FAT32, ambas sin escribir en el origen; redimensionado/movimiento interactivo solo vista previa. Plan de producto en ROADMAP.md.
+0.7.0: interfaz clara por defecto con accesos a tareas habituales y utilidades técnicas en Herramientas avanzadas. Lectura, inventario Win32 y SMART; restauración, clonación, edición de tabla y formato FAT32/exFAT limitados a VHD <=4 GiB. Búsqueda de particiones perdidas y recuperación limitada de borrados FAT32, ambas sin escribir en el origen; redimensionado/movimiento interactivo solo vista previa. Plan de producto en ROADMAP.md.
 
 
 

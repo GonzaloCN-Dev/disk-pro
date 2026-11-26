@@ -4,7 +4,8 @@ setlocal
 for /f %%V in ('powershell -NoProfile -Command "$c=Get-Content CMakeLists.txt -Raw; if($c -match 'project\(DiskPro VERSION ([0-9.]+)'){ $Matches[1] } else { exit 1 }"') do set V=%%V
 if not defined V exit /b 1
 set D=dist\DiskPro-%V%-win64
-rmdir /s /q dist 2>nul
+rmdir /s /q %D% 2>nul
+del /q dist\DiskPro-%V%-win64-portable.zip 2>nul
 mkdir %D% || exit /b 1
 for %%F in (gui cli inventory tools restore clone part vhd) do copy build\diskpro-%%F.exe %D% >nul || exit /b 1
 copy .tools\slint\lib\slint_cpp.dll %D% >nul || exit /b 1

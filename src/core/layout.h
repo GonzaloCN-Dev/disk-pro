@@ -15,6 +15,10 @@ public:
     virtual uint64_t size() const = 0;
     // Returns false on I/O error or out-of-range read. Never throws.
     virtual bool read(uint64_t offset, void* buf, size_t len) const = 0;
+    // Optional file identity; used to prevent recovery outputs from replacing their source image.
+    virtual std::string backingFilePath() const { return {}; }
+    // Optional physical disk identity for raw-device-backed sources.
+    virtual int backingDiskNumber() const { return -1; }
 };
 
 class MemorySource final : public ByteSource {
@@ -41,6 +45,8 @@ public:
         if (!base_ || off > len_ || len > len_ - off) return false;
         return base_->read(off_ + off, buf, len);
     }
+    std::string backingFilePath() const override { return base_ ? base_->backingFilePath() : std::string{}; }
+    int backingDiskNumber() const override { return base_ ? base_->backingDiskNumber() : -1; }
 private:
     std::shared_ptr<const ByteSource> base_;
     uint64_t off_ = 0, len_ = 0;
@@ -52,9 +58,11 @@ public:
     bool ok() const { return f_ != nullptr; }
     uint64_t size() const override { return size_; }
     bool read(uint64_t off, void* buf, size_t len) const override;
+    std::string backingFilePath() const override { return path_; }
 private:
     void* f_ = nullptr;
     uint64_t size_ = 0;
+    std::string path_;
 };
 
 enum class Scheme { Unknown, Raw, MBR, GPT };

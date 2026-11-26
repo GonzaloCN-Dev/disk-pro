@@ -15,11 +15,17 @@ public:
     bool ok() const { return h_ != nullptr; }
     uint64_t size() const override { return size_; }
     bool read(uint64_t off, void* buf, size_t len) const override;
+    int backingDiskNumber() const override { return disk_; }
 private:
+    int disk_ = -1;
     void* h_ = nullptr;
     uint64_t size_ = 0;
     uint32_t sector_ = 512;
 };
+
+// Resolves existing filesystem paths to their hosting physical disks/volumes.
+// Returns false when Windows cannot identify the path (callers must fail closed for recovery output).
+bool pathOnPhysicalDisk(const std::string& path, int diskNumber, std::string& error);
 
 // Raw write access. Construction revalidates the preview facts and only opens an eligible virtual, non-system disk.
 class DeviceSink final : public ByteSink {

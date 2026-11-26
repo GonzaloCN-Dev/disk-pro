@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include "format.h"
 #include "recover.h"
 
@@ -106,6 +107,32 @@ static void deletedFiles() {
         b[changed.directoryEntryOffset + 28] ^= 1;
         auto rejected = recoverFat32File(volume, changed, cancel, [](const void*, size_t) { return true; });
         CHECK(!rejected.ok && rejected.bytes == 0);
+        b[changed.directoryEntryOffset + 28] ^= 1;
+        b[changed.directoryEntryOffset] = 'H'; // a live directory entry now owns the old candidate clusters
+        size_t unexpectedWrites = 0;
+        auto reused = recoverFat32File(volume, scan.files[0], cancel, [&](const void*, size_t) {
+            ++unexpectedWrites; return true;
+        });
+        CHECK(!reused.ok && reused.bytes == 0 && unexpectedWrites == 0);
+        b[changed.directoryEntryOffset] = 0xE5;
+
+        const auto sourcePath = std::filesystem::temp_directory_path() / "diskpro-fat32-source-image-test.raw";
+        {
+            std::ofstream image(sourcePath, std::ios::binary | std::ios::trunc);
+            image.write(reinterpret_cast<const char*>(b.data()), std::streamsize(b.size()));
+            CHECK(bool(image));
+        }
+        {
+            FileSource image(sourcePath.string());
+            CHECK(image.ok());
+            auto fresh = findDeletedFat32Files(image, cancel);
+            CHECK(fresh.ok && !fresh.files.empty());
+            if (fresh.ok && !fresh.files.empty()) {
+                auto sameSource = recoverFat32FileToNewFile(image, fresh.files[0], sourcePath.string(), cancel);
+                CHECK(!sameSource.ok && sameSource.error.find("source image") != std::string::npos);
+            }
+        }
+        std::filesystem::remove(sourcePath, ec);
     }
     std::atomic<bool> stop{true};
     CHECK(findDeletedFat32Files(volume, stop).cancelled);

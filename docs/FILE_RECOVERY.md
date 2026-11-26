@@ -16,7 +16,7 @@ Los números indican la partición y el candidato mostrados por `files`. El orig
 - se elimina si la lectura, escritura o vaciado falla;
 - incluye el SHA-256 de los bytes recuperados.
 
-Antes de extraer, Disk Pro vuelve a leer la entrada de directorio y la FAT. Rechaza el candidato si cambió, si sus clústeres fueron reutilizados o si ahora los referencia un archivo accesible.
+Antes de extraer, Disk Pro vuelve a escanear directorios accesibles, relee la entrada y la FAT y comprueba que el candidato sigue igual y que ningún archivo activo referencia sus clústeres. Para imágenes respaldadas por archivo, rechaza como salida la propia imagen (incluidos hard links existentes). Si el origen es un disco físico, también rechaza salidas en ese mismo disco y falla de forma segura si Windows no puede determinar dónde está la salida.
 
 ## Puntuación y límites
 

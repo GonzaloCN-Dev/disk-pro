@@ -5,10 +5,52 @@
 #include <winioctl.h>
 #include <string>
 #include <vector>
+#include <filesystem>
 
 namespace diskpro {
 
+bool pathOnPhysicalDisk(const std::string& path, int diskNumber, std::string& error) {
+    if (diskNumber < 0) return true;
+    const auto wide = std::filesystem::path(path).wstring();
+    wchar_t volumePath[MAX_PATH]{};
+    if (!GetVolumePathNameW(wide.c_str(), volumePath, MAX_PATH)) {
+        error = "cannot determine the output volume";
+        return false;
+    }
+    wchar_t volumeName[MAX_PATH]{};
+    if (!GetVolumeNameForVolumeMountPointW(volumePath, volumeName, MAX_PATH)) {
+        error = "cannot identify the output volume";
+        return false;
+    }
+    std::wstring devicePath = volumeName;
+    if (!devicePath.empty() && devicePath.back() == L'\\') devicePath.pop_back();
+    HANDLE h = CreateFileW(devicePath.c_str(), 0, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                           nullptr, OPEN_EXISTING, 0, nullptr);
+    if (h == INVALID_HANDLE_VALUE) {
+        error = "cannot inspect the output volume";
+        return false;
+    }
+    std::vector<BYTE> buffer(sizeof(VOLUME_DISK_EXTENTS) + 64 * sizeof(DISK_EXTENT));
+    DWORD returned = 0;
+    const BOOL ok = DeviceIoControl(h, IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS, nullptr, 0,
+                                    buffer.data(), DWORD(buffer.size()), &returned, nullptr);
+    CloseHandle(h);
+    if (!ok || returned < sizeof(VOLUME_DISK_EXTENTS)) {
+        error = "cannot determine which physical disk contains the output";
+        return false;
+    }
+    const auto* extents = reinterpret_cast<const VOLUME_DISK_EXTENTS*>(buffer.data());
+    for (DWORD i = 0; i < extents->NumberOfDiskExtents; ++i) {
+        if (extents->Extents[i].DiskNumber == DWORD(diskNumber)) {
+            error = "output is on the same physical disk as the recovery source";
+            return false;
+        }
+    }
+    return true;
+}
+
 DeviceSource::DeviceSource(int n) {
+    disk_ = n;
     if (n < 0 || n > 4095) return;
     std::wstring path = L"\\\\.\\PhysicalDrive" + std::to_wstring(n);
     HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);

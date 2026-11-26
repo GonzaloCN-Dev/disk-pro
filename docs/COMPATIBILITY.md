@@ -1,4 +1,4 @@
-# Matriz de compatibilidad (0.6.0)
+# Matriz de compatibilidad (0.7.0)
 
 La matriz describe el alcance documentado; **“No verificado” no significa compatible**. La elegibilidad concreta de escritura se vuelve a validar en tiempo de ejecución y puede ser más restrictiva.
 

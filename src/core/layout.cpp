@@ -8,6 +8,7 @@
 #include <array>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 
 namespace diskpro {
 
@@ -262,6 +263,17 @@ bool MemorySource::read(uint64_t off, void* buf, size_t len) const {
 }
 
 FileSource::FileSource(const std::string& path) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const fs::path input = fs::u8path(path);
+    const fs::path absolute = fs::absolute(input, ec);
+    if (!ec) {
+        ec.clear();
+        const fs::path canonical = fs::weakly_canonical(absolute, ec);
+        path_ = (ec ? absolute : canonical).string();
+    } else {
+        path_ = path;
+    }
     FILE* f = nullptr;
 #ifdef _WIN32
     f = _fsopen(path.c_str(), "rb", _SH_DENYNO);  // read-only by construction; others may write (readback of restores)

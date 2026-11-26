@@ -1,5 +1,12 @@
 ﻿# Changelog
 
+## 0.7.0 - 2026-11-26
+- Reorganized the main toolbar around direct disk tasks: analyze, find lost partitions, recover files, format and partition; task buttons are unavailable until the required disk/partition is selected and open focused task views with a clear return path.
+- Replaced the generic Tools entry with “Advanced tools” and moved it out of the primary task toolbar; low-level utilities remain available.
+- Light theme is now the default for new installations; users can still select system or dark theme.
+- Added colored task icons and Spanish/English labels. Actions continue to route through the existing previews, typed confirmations and VHD write guards; repair and physical-disk writing are not advertised as available.
+- FAT32 recovery now revalidates candidates immediately before extraction and refuses the source image or a recovery output located on the same physical disk.
+
 ## 0.6.0 - 2026-11-26
 - Added Windows CI, MSVC static-analysis build, compatibility/roadmap/progress/testing documents, and a GUI smoke test.
 - Inventory now exposes mounted-volume labels and free/total capacity when Windows provides them; filtering and reports include more disk and partition details.

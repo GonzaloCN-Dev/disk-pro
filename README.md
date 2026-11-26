@@ -20,9 +20,9 @@
 
 Disk Pro es una aplicación de escritorio en español e inglés para inspeccionar discos físicos y virtuales, sus tablas de particiones y su salud. Está escrita en C++ con Slint: sin Electron, sin WebView y sin servidores. Desarrollado por **Gonzalo Cruz Núñez** ([GCN Dev](https://dev.gonzalocn.com/)).
 
-> **Estado: 0.6.0.** Lee discos y, **solo en discos virtuales (VHD) de hasta 4 GiB**, restaura tablas, clona, edita la tabla de particiones y formatea FAT32/exFAT. Busca particiones perdidas y recupera de forma limitada archivos borrados FAT32 hacia otro destino. No formatea NTFS, no mueve datos al redimensionar y no escribe en discos físicos: no se simula. Consulta [Estado y límites](#estado-y-límites).
+> **Estado: 0.7.0.** La interfaz ofrece accesos directos para analizar, buscar particiones perdidas, recuperar archivos, formatear y particionar. Las utilidades técnicas quedan en **Herramientas avanzadas**. Lee discos y, **solo en discos virtuales (VHD) de hasta 4 GiB**, restaura tablas, clona, edita la tabla de particiones y formatea FAT32/exFAT. La búsqueda de archivos está limitada a casos FAT32 y el redimensionado/movimiento interactivo sigue siendo vista previa. No escribe en discos físicos. Consulta [Estado y límites](#estado-y-límites).
 
-*EN – Disk Pro is a free, open-source, native Windows disk inspector (GPT/MBR, partitions, NVMe/ATA health, imaging, hex viewer). Version 0.6.0 reads any disk; writing (restore, clone, partition-table edits, FAT32/exFAT format) is limited to virtual disks of up to 4 GiB. Lost-partition search and limited FAT32 deleted-file recovery are read-only on the source. No NTFS formatting, no physical-disk writes.*
+*EN – Disk Pro is a free, open-source, native Windows disk inspector with direct task shortcuts and a light-first interface. Version 0.7.0 reads any disk; writing remains limited to eligible virtual disks of up to 4 GiB. Lost-partition search and limited FAT32 deleted-file recovery are read-only on the source. No NTFS formatting or physical-disk writes.*
 
 ## Capturas
 
@@ -60,6 +60,7 @@ Disk Pro es una aplicación de escritorio en español e inglés para inspecciona
 | **Recuperación de archivos FAT32** | `diskpro-tools files` enumera candidatos borrados en directorios accesibles y `extract` los copia a un archivo nuevo en otro destino, tras revalidar entrada y clústeres. Nunca escribe en el origen. |
 | **Ajustes y actualizaciones** | Busca nuevas versiones, las descarga y las instala desde Ajustes. La búsqueda al iniciar está desactivada por defecto. Solo hace una petición HTTPS a GitHub; el instalador se verifica con SHA-256 antes de ejecutarse. |
 | **Interfaz** | Tema claro, oscuro o del sistema; español e inglés; tres densidades; navegación con teclado; sin bloquear la ventana mientras se lee. |
+| **Accesos directos** | Tras seleccionar un disco, botones visibles para analizar, buscar particiones perdidas y acceder a recuperación, formato y particionado. Las utilidades de bajo nivel se agrupan en **Herramientas avanzadas**. |
 
 Leer discos físicos con las herramientas requiere ejecutar Disk Pro como administrador. El inventario no lo necesita.
 
@@ -77,7 +78,7 @@ Windows 10 u 11 de 64 bits. El instalador incluye el runtime de Visual C++; el z
 
 ## Instalación
 
-Descarga `DiskPro-Setup-0.6.0.exe` (instalador, por usuario, sin administrador) o `DiskPro-0.6.0-win64-portable.zip` desde [Releases](https://github.com/GonzaloCN-Dev/disk-pro/releases/latest). Los hashes están en `SHA256SUMS.txt`.
+Descarga `DiskPro-Setup-0.7.0.exe` (instalador, por usuario, sin administrador) o `DiskPro-0.7.0-win64-portable.zip` desde [Releases](https://github.com/GonzaloCN-Dev/disk-pro/releases/latest). Los hashes están en `SHA256SUMS.txt`.
 
 ## Compilar desde el código
 

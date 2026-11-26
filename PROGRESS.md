@@ -18,6 +18,8 @@ Estado actualizado: 2026-11-26.
 - Auditoría de callbacks: eliminados registros duplicados que anulaban el cambio de idioma y la selección de disco; añadida prueba de interacción GUI.
 - Recuperación limitada de archivos borrados FAT32 hacia un archivo nuevo: revalida entrada/FAT, rechaza clústeres reutilizados y calcula SHA-256.
 - Diagnóstico ATA SMART para temperatura, horas y contadores críticos habituales, además de NVMe y fallo previsto.
+- La extracción FAT32 vuelve a escanear referencias vivas justo antes de devolver datos; rechaza la imagen origen y, si el origen es un disco físico, cualquier destino en ese mismo disco (o falla de forma segura si no puede identificarlo).
+- La interfaz 0.7.0 pone en primer plano acciones de disco frecuentes con iconos de color; las utilidades de bajo nivel se agrupan en Herramientas avanzadas y el tema claro es el predeterminado en instalaciones nuevas.
 
 ## En curso
 

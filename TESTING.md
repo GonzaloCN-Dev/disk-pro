@@ -13,7 +13,7 @@ Configura Release con MSVC/Ninja, compila y ejecuta CTest. Suite actual:
 - `gui-smoke`: inicia la GUI, completa inventario y cierra.
 - `layout`, `tools`, `restore`, `clone`, `partops`, `format`, `recover`, `resize`, `update`, `report`.
 
-Último resultado local (2026-11-26): **17/17 correctas**, incluidas regresiones de cambio de destino, bloqueo previo de volúmenes, creación de un VHDX desechable, interacción básica GUI, validación de argumentos CLI, recuperación FAT32 sin sobrescritura y análisis ATA SMART sintético.
+Último resultado local (2026-11-26): **17/17 correctas**, incluidas regresiones de cambio de destino, bloqueo previo de volúmenes, creación de un VHDX desechable, interacción básica GUI, validación de argumentos CLI, recuperación FAT32 sin sobrescritura y análisis ATA SMART sintético. La recuperación prueba también el reescaneo de candidatos y el rechazo del archivo de origen como salida.
 
 ## Análisis estático
 
@@ -35,5 +35,5 @@ Pendiente de verificación: conexión/desconexión elevada de VHDX (Windows devo
 ## Distribución
 
 - `package.cmd`: verificado; genera zip portable y `SHA256SUMS.txt`, incluyendo `diskpro-vhd.exe`.
-- `installer/build-installer.ps1`: compilación verificada con Inno Setup 6.7.4; genera `DiskPro-Setup-0.6.0.exe`.
+- `installer/build-installer.ps1`: compilación verificada con Inno Setup 6.7.4; genera `DiskPro-Setup-0.7.0.exe`.
 - No se instaló ni firmó ningún artefacto durante estas pruebas.
