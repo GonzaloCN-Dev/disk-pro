@@ -61,8 +61,53 @@ DeviceSink::DeviceSink(int n) {
     size_ = uint64_t(g.DiskSize.QuadPart);
     sector_ = g.Geometry.BytesPerSector;
     h_ = h;
+    disk_ = n;
 }
-DeviceSink::~DeviceSink() { if (h_) CloseHandle(h_); }
+DeviceSink::~DeviceSink() {
+    for (void* v : locked_) CloseHandle(v);
+    if (h_) CloseHandle(h_);
+}
+
+// Locks and dismounts every volume that lives (even partly) in [offset, offset+length) of this disk, so that Windows
+// does not block the raw write or overwrite the new file system with its cached copy. Handles stay open until destruction.
+bool DeviceSink::prepare(uint64_t offset, uint64_t length) {
+    if (!h_ || disk_ < 0) return false;
+    wchar_t name[MAX_PATH];
+    HANDLE find = FindFirstVolumeW(name, MAX_PATH);
+    if (find == INVALID_HANDLE_VALUE) return true;
+    bool ok = true;
+    do {
+        std::wstring path = name;
+        if (!path.empty() && path.back() == L'\\') path.pop_back();
+        HANDLE v = CreateFileW(path.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+        if (v == INVALID_HANDLE_VALUE) {
+            v = CreateFileW(path.c_str(), 0, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);   // query only
+            if (v == INVALID_HANDLE_VALUE) continue;
+        }
+        std::vector<uint8_t> buf(4096);
+        DWORD got = 0;
+        bool mine = false;
+        if (DeviceIoControl(v, IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS, nullptr, 0, buf.data(), DWORD(buf.size()), &got, nullptr)) {
+            auto* e = reinterpret_cast<VOLUME_DISK_EXTENTS*>(buf.data());
+            for (DWORD i = 0; i < e->NumberOfDiskExtents; ++i) {
+                const auto& x = e->Extents[i];
+                if (int(x.DiskNumber) != disk_) continue;
+                uint64_t s = uint64_t(x.StartingOffset.QuadPart), l = uint64_t(x.ExtentLength.QuadPart);
+                if (s < offset + length && offset < s + l) mine = true;
+            }
+        }
+        if (!mine) { CloseHandle(v); continue; }
+        if (!DeviceIoControl(v, FSCTL_LOCK_VOLUME, nullptr, 0, nullptr, 0, &got, nullptr) ||
+            !DeviceIoControl(v, FSCTL_DISMOUNT_VOLUME, nullptr, 0, nullptr, 0, &got, nullptr)) {
+            ok = false;
+            CloseHandle(v);
+            continue;
+        }
+        locked_.push_back(v);
+    } while (FindNextVolumeW(find, name, MAX_PATH));
+    FindVolumeClose(find);
+    return ok;
+}
 
 bool DeviceSink::write(uint64_t off, const void* buf, size_t len) {
     if (!h_ || len == 0) return false;

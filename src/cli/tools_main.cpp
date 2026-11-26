@@ -6,7 +6,7 @@
 #include <cstring>
 #include <memory>
 #include <string>
-#include "tools.h"
+#include "recover.h"
 #ifdef _WIN32
 #include "device.h"
 #endif
@@ -37,7 +37,7 @@ int main(int argc, char** argv) {
     if (argc < 3) {
         std::fprintf(stderr,
                      "usage:\n  diskpro-tools hash <src>\n  diskpro-tools image <src> <out.img>   (never overwrites)\n"
-                     "  diskpro-tools scan <src>\n  diskpro-tools ptbackup <src> <out.ptb>   (saves first/last MiB; never overwrites)\n  diskpro-tools ptverify <file.ptb>\n  diskpro-tools hex <src> <offset> [len]\n"
+                     "  diskpro-tools scan <src>\n  diskpro-tools ptbackup <src> <out.ptb>   (saves first/last MiB; never overwrites)\n  diskpro-tools ptverify <file.ptb>\n  diskpro-tools hex <src> <offset> [len]\n  diskpro-tools recover <src> [512|4096]   (finds lost NTFS/FAT32/exFAT partitions; read-only)\n"
                      "src = file or disk:N (read-only; admin needed for disks)\n");
         return 2;
     }
@@ -77,6 +77,17 @@ int main(int argc, char** argv) {
         std::printf("blocks=%llu bad=%llu speed=%.1f MB/s\n", (unsigned long long)r.blocks, (unsigned long long)r.badBlocks, r.mbPerSec);
         for (auto o : r.badOffsets) std::printf("bad offset %llu\n", (unsigned long long)o);
         return r.badBlocks ? 3 : 0;
+    }
+    if (cmd == "recover") {
+        uint32_t ss = argc > 3 ? uint32_t(std::strtoul(argv[3], nullptr, 10)) : 512;
+        auto r = findLostPartitions(*src, ss, cancel, prog);
+        std::fprintf(stderr, "\n");
+        if (!r.ok) { std::fprintf(stderr, "error: %s\n", r.error.empty() ? "cancelled" : r.error.c_str()); return 1; }
+        std::printf("scanned=%llu found=%zu\n", (unsigned long long)r.scannedBytes, r.found.size());
+        for (auto& f : r.found)
+            std::printf("%-6s firstLba=%llu sectors=%llu size=%s%s\n", f.filesystem.c_str(), (unsigned long long)f.firstLba,
+                        (unsigned long long)f.sectorCount, humanSize(f.sectorCount * ss).c_str(), f.overlapsExisting ? "  (already in the table)" : "  (LOST)");
+        return 0;
     }
     if (cmd == "hex") {
         if (argc < 4) return 2;

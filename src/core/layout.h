@@ -1,4 +1,4 @@
-// Disk Pro - MIT License - Copyright (c) Gonzalo Cruz Núñez
+﻿// Disk Pro - MIT License - Copyright (c) Gonzalo Cruz Núñez
 // Portable, read-only partition table analysis (MBR/GPT). No platform APIs here.
 #pragma once
 #include <cstddef>
@@ -27,6 +27,24 @@ private:
     std::vector<uint8_t> data_;
 };
 
+// A read-only window [offset, offset+length) over another source: lets every read-only tool work on one partition.
+class RangeSource final : public ByteSource {
+public:
+    RangeSource(std::shared_ptr<const ByteSource> base, uint64_t offset, uint64_t length)
+        : base_(std::move(base)), off_(offset), len_(length) {
+        const uint64_t bs = base_ ? base_->size() : 0;
+        if (off_ > bs) { off_ = bs; len_ = 0; }
+        else if (len_ > bs - off_) len_ = bs - off_;
+    }
+    uint64_t size() const override { return len_; }
+    bool read(uint64_t off, void* buf, size_t len) const override {
+        if (!base_ || off > len_ || len > len_ - off) return false;
+        return base_->read(off_ + off, buf, len);
+    }
+private:
+    std::shared_ptr<const ByteSource> base_;
+    uint64_t off_ = 0, len_ = 0;
+};
 class FileSource final : public ByteSource {
 public:
     explicit FileSource(const std::string& path);

@@ -20,9 +20,9 @@
 
 Disk Pro es una aplicación de escritorio en español e inglés para inspeccionar discos físicos y virtuales, sus tablas de particiones y su salud. Está escrita en C++ con Slint: sin Electron, sin WebView y sin servidores. Desarrollado por **Gonzalo Cruz Núñez** ([GCN Dev](https://dev.gonzalocn.com/)).
 
-> **Estado: 0.3.1.** El programa es de lectura salvo una operación: restaurar una copia de la tabla de particiones **en discos virtuales (VHD)**, desde la línea de comandos. No crea, borra, formatea ni redimensiona particiones, ni clona, ni recupera archivos: esas funciones están pendientes y no se simulan. Consulta [Estado y límites](#estado-y-límites).
+> **Estado: 0.5.0.** Lee discos y, **solo en discos virtuales (VHD) de hasta 4 GiB**, restaura tablas, clona, edita la tabla de particiones y formatea FAT32/exFAT. Busca particiones perdidas (solo lectura). No formatea NTFS, no mueve datos al redimensionar, no recupera archivos y no escribe en discos físicos: no se simula. Consulta [Estado y límites](#estado-y-límites).
 
-*EN – Disk Pro is a free, open-source, native Windows disk inspector (GPT/MBR, partitions, NVMe health, imaging, hex viewer). Version 0.3.1 is read-only except for one command that restores a partition-table backup onto virtual disks only.*
+*EN – Disk Pro is a free, open-source, native Windows disk inspector (GPT/MBR, partitions, NVMe health, imaging, hex viewer). Version 0.5.0 reads any disk; writing (restore, clone, partition-table edits, FAT32/exFAT format) is limited to virtual disks of up to 4 GiB. Lost-partition search is read-only. No NTFS formatting, no physical-disk writes.*
 
 ## Capturas
 
@@ -50,6 +50,9 @@ Disk Pro es una aplicación de escritorio en español e inglés para inspecciona
 | **Crear imagen** | Copia un disco o archivo a una imagen. Nunca sobrescribe un archivo existente; los bloques ilegibles se rellenan con ceros y se cuentan. |
 | **Copia de la tabla de particiones** | Guarda el primer y último MiB del disco (MBR/GPT y copia de seguridad GPT) en un archivo `.ptb` con SHA-256, y `diskpro-tools ptverify` comprueba su integridad. Se restaura con `diskpro-restore` (ver abajo). |
 | **Restaurar tabla (solo VHD)** | `diskpro-restore copia.ptb N` muestra una vista previa; para aplicar hay que escribir `--confirm "RESTORE DISK N"`. Bloquea el disco de sistema, discos no virtuales, de más de 4 GiB, de otro tamaño o con letras montadas, y verifica releyendo. Solo toca el primer y último MiB. Necesita administrador. |
+| **Clonar (solo VHD)** | `diskpro-clone --disk N --to M` (o `--image archivo`) y página Herramientas: vista previa, texto de confirmación `CLONE TO DISK M`, barra de progreso, cancelar y verificación releyendo. Solo escribe en discos virtuales de hasta 4 GiB, nunca en el de sistema. Necesita administrador. |
+| **Editar tabla (solo VHD)** | `diskpro-part --disk N init-mbr/init-gpt/create/delete/settype/setactive/resize/merge/format`, menú de clic derecho y campos de la página Herramientas: vista previa, confirmación `EDIT DISK N`, verificación releyendo. Solo toca la tabla, nunca el sistema de archivos (redimensionar y fusionar NO ajustan los datos). Solo primarias en MBR. **Formatear FAT32 y exFAT** (formateadores propios, formato rápido; NTFS no está). Al formatear bloquea y desmonta solo el volumen de esa partición. Solo VHD de hasta 4 GiB. Necesita administrador. |
+| **Plan de particiones** | Arrastra el borde de una partición para redimensionar o su cuerpo para mover: solo **vista previa**, no cambia ningún disco. |
 | **Análisis de superficie** | Lee todo el origen en solo lectura y lista los bloques ilegibles y la velocidad. |
 | **Visor hexadecimal** | Navega por offset y por sectores, con columna ASCII. |
 | **Análisis de imágenes** | `diskpro-cli imagen.vhd` analiza MBR/GPT en un archivo (512 y 4096 bytes por sector, pie de VHD fijo). |
@@ -60,7 +63,7 @@ Leer discos físicos con las herramientas requiere ejecutar Disk Pro como admini
 
 ## Estado y límites
 
-- **No incluido todavía:** crear, borrar, formatear, redimensionar o mover particiones; restaurar en discos físicos; interfaz gráfica para restaurar; clonar; restaurar imágenes; recuperación de archivos; discos virtuales (montar/convertir); atributos SMART de discos ATA.
+- **No incluido todavía:** crear, borrar, formatear, aplicar el redimensionado o movimiento de particiones; restaurar y clonar en discos físicos; interfaz gráfica para restaurar; restaurar imágenes; recuperación de archivos; discos virtuales (montar/convertir); atributos SMART de discos ATA.
 - **Probado:** pruebas unitarias con imágenes sintéticas (GPT, MBR, 512/4096, corrupción, errores de lectura inyectados), SHA-256 con vectores conocidos, y pruebas con un VHD desechable (GPT y MBR), incluida la restauración de la tabla y el bloqueo del disco de sistema.
 - **Sin probar:** VHDX, sectores de 4096 bytes en dispositivos reales, y las herramientas de imagen/superficie sobre un disco físico.
 - El instalador **no está firmado**: Windows SmartScreen puede avisar. Comprueba el SHA-256 de la descarga.
@@ -71,7 +74,7 @@ Windows 10 u 11 de 64 bits. El instalador incluye el runtime de Visual C++; el z
 
 ## Instalación
 
-Descarga `DiskPro-Setup-0.3.1.exe` (instalador, por usuario, sin administrador) o `DiskPro-0.3.1-win64-portable.zip` desde [Releases](https://github.com/GonzaloCN-Dev/disk-pro/releases/latest). Los hashes están en `SHA256SUMS.txt`.
+Descarga `DiskPro-Setup-0.5.0.exe` (instalador, por usuario, sin administrador) o `DiskPro-0.5.0-win64-portable.zip` desde [Releases](https://github.com/GonzaloCN-Dev/disk-pro/releases/latest). Los hashes están en `SHA256SUMS.txt`.
 
 ## Compilar desde el código
 
@@ -79,11 +82,11 @@ Requisitos: Visual Studio 2022 Build Tools (C++, CMake, Ninja) y el SDK C++ de S
 
 ```
 build.cmd      # compila y ejecuta las pruebas
-package.cmd    # genera dist\DiskPro-0.3.1-win64-portable.zip
+package.cmd    # genera dist\DiskPro-0.5.0-win64-portable.zip
 powershell -File installer\build-installer.ps1   # instalador (requiere Inno Setup 6)
 ```
 
-Pruebas con VHD (PowerShell **como administrador**; `tests\vhdx\run_all.ps1` y `tests\vhdx\run_restore_all.ps1`; solo usa un VHD desechable en `%TEMP%` y se niega a tocar otros discos):
+Pruebas con VHD (PowerShell **como administrador**; `tests\vhdx\run_all.ps1` y `tests\vhdx\run_restore_all.ps1` y `tests\vhdx\run_clone_all.ps1`; solo usa un VHD desechable en `%TEMP%` y se niega a tocar otros discos):
 `powershell -ExecutionPolicy Bypass -File tests\vhdx\run_all.ps1`
 
 Arquitectura: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).

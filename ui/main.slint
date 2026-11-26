@@ -4,6 +4,7 @@ import { Button, CheckBox, ComboBox, LineEdit, ListView, ScrollView, AboutSlint,
 export struct DiskRow { name: string, detail: string, size: string, style: string, tag: string }
 export struct PartRow { num: string, type: string, fs: string, size: string, offset: string, volume: string }
 export struct SegRow { label: string, size: string, start: float, fraction: float, free: bool }
+export struct PlanSeg { label: string, size: string, start: float, fraction: float, free: bool, changed: bool }
 export struct DiagRow { severity: int, text: string }
 
 export global Tr {
@@ -39,6 +40,7 @@ export global Tr {
     in property <string> t-hash;
     in property <string> t-image;
     in property <string> t-scan;
+    in property <string> t-recover;
     in property <string> t-hex;
     in property <string> t-open;
     in property <string> t-cancel;
@@ -58,6 +60,29 @@ export global Tr {
     in property <string> t-ptb;
     in property <string> t-restore;
     in property <string> t-apply;
+    in property <string> plan-title;
+    in property <string> plan-reset;
+    in property <string> t-clone;
+    in property <string> t-clone-apply;
+    in property <string> t-clone-target;
+    in property <string> m-file;
+    in property <string> m-disk;
+    in property <string> m-view;
+    in property <string> m-help;
+    in property <string> m-exit;
+    in property <string> tb-clone;
+    in property <string> tb-restore;
+    in property <string> c-soon;
+    in property <string> c-part;
+    in property <string> c-disk;
+    in property <string> c-plan;
+    in property <[string]> c-future;
+    in property <[string]> c-ops;
+    in property <string> e-start;
+    in property <string> e-size;
+    in property <string> e-type;
+    in property <string> e-preview;
+    in property <string> e-apply;
     in property <string> t-confirm-hint;
     in property <bool> restore-ready: false;
     in-out property <string> restore-confirm;
@@ -65,6 +90,49 @@ export global Tr {
     callback restore-apply(string);
 }
 
+component ToolBtn inherits Rectangle {
+    in property <string> label;
+    in property <string> icon;
+    in property <bool> enabled: true;
+    callback clicked();
+    width: max(64px, lbl.preferred-width + 14px);
+    border-radius: 4px;
+    background: ta.pressed && root.enabled ? Palette.border : ta.has-hover && root.enabled ? Palette.border.with-alpha(0.5) : transparent;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-enabled: root.enabled;
+    opacity: root.enabled ? 1.0 : 0.4;
+    VerticalLayout {
+        padding-top: 5px; padding-bottom: 3px; spacing: 3px;
+        Rectangle {
+            height: 32px;
+            Path {
+                width: 30px; height: 30px; viewbox-width: 24; viewbox-height: 24;
+                commands: root.icon;
+                stroke: Palette.foreground; stroke-width: 1.7px; fill: transparent;
+                stroke-line-cap: round; stroke-line-join: round;
+            }
+        }
+        lbl := Text { text: root.label; font-size: 11px; horizontal-alignment: center; color: Palette.foreground; overflow: elide; }
+    }
+    ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+component TabBtn inherits Rectangle {
+    in property <string> label;
+    in property <bool> active;
+    callback clicked();
+    width: max(90px, t.preferred-width + 24px);
+    background: root.active ? Palette.background : transparent;
+    border-width: root.active ? 1px : 0px;
+    border-color: Palette.border;
+    t := Text { text: root.label; font-weight: root.active ? 700 : 400; color: Palette.foreground; horizontal-alignment: center; vertical-alignment: center; }
+    TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
 component Section inherits Text {
     font-size: 13px;
     font-weight: 700;
@@ -79,14 +147,26 @@ component Cell inherits Text {
 
 export component MainWindow inherits Window {
     title: Tr.app-title;
-    min-width: 1180px;
-    min-height: 520px;
-    preferred-width: 1200px;
-    preferred-height: 700px;
+    min-width: 980px;
+    min-height: 560px;
+    preferred-width: 1180px;
+    preferred-height: 760px;
     background: Palette.background;
 
     in property <[DiskRow]> disks;
     in property <[PartRow]> parts;
+    in property <[PlanSeg]> plan-segs;
+    in property <string> plan-text;
+    callback plan-hit(float, float) -> int;
+    callback plan-press(float, float);
+    callback plan-drag(float);
+    callback plan-release();
+    callback plan-reset();
+    in property <bool> clone-ready: false;
+    in-out property <string> clone-confirm;
+    in-out property <string> clone-target;
+    callback clone-preview(string);
+    callback clone-apply(string);
     in property <[SegRow]> segments;
     in property <[DiagRow]> diags;
     in property <string> health-text;
@@ -123,9 +203,20 @@ export component MainWindow inherits Window {
     }
 
     callback refresh();
+    callback quit();
+    callback ctx-action(string, int);
+    callback part-selected(int);
+    in property <int> part-sel: -1;
     callback tool-run(string, string);
     callback tool-open-file();
     callback tool-cancel();
+    in property <bool> part-ready: false;
+    in-out property <string> part-confirm;
+    in-out property <string> edit-start;
+    in-out property <string> edit-size;
+    in-out property <string> edit-type: "ntfs";
+    callback part-preview(string, int);
+    callback part-apply(string);
     in property <bool> restore-ready: false;
     in-out property <string> restore-confirm;
     callback restore-preview();
@@ -136,67 +227,69 @@ export component MainWindow inherits Window {
     callback density-changed(int);
     callback language-changed(int);
 
+    MenuBar {
+        Menu {
+            title: Tr.m-file;
+            MenuItem { title: Tr.report; enabled: root.disks.length > 0; activated => { root.export-report(); } }
+            MenuItem { title: Tr.settings; activated => { root.show-settings = true; } }
+            MenuItem { title: Tr.m-exit; activated => { root.quit(); } }
+        }
+        Menu {
+            title: Tr.m-disk;
+            MenuItem { title: Tr.refresh; activated => { root.refresh(); } }
+            MenuItem { title: Tr.t-clone; enabled: root.selected >= 0; activated => { root.show-tools = true; } }
+            MenuItem { title: Tr.t-restore; enabled: root.selected >= 0; activated => { root.show-tools = true; root.restore-preview(); } }
+            MenuItem { title: Tr.t-ptb; enabled: root.selected >= 0; activated => { root.show-tools = true; root.tool-run("ptbackup", ""); } }
+        }
+        Menu {
+            title: Tr.tools;
+            MenuItem { title: Tr.t-hash; activated => { root.show-tools = true; root.tool-run("hash", ""); } }
+            MenuItem { title: Tr.t-image; activated => { root.show-tools = true; root.tool-run("image", ""); } }
+            MenuItem { title: Tr.t-recover; activated => { root.show-tools = true; root.tool-run("recover", ""); } }
+            MenuItem { title: Tr.t-scan; activated => { root.show-tools = true; root.tool-run("scan", ""); } }
+            MenuItem { title: Tr.t-hex; activated => { root.show-tools = true; root.tool-run("hex", root.hex-offset); } }
+            MenuItem { title: Tr.t-open; activated => { root.show-tools = true; root.tool-open-file(); } }
+        }
+        Menu {
+            title: Tr.m-view;
+            MenuItem { title: Tr.theme + ": " + Tr.theme-options[0]; activated => { root.theme-changed(0); } }
+            MenuItem { title: Tr.theme + ": " + Tr.theme-options[1]; activated => { root.theme-changed(1); } }
+            MenuItem { title: Tr.theme + ": " + Tr.theme-options[2]; activated => { root.theme-changed(2); } }
+            MenuItem { title: Tr.density + ": " + Tr.density-options[0]; activated => { root.density-changed(0); } }
+            MenuItem { title: Tr.density + ": " + Tr.density-options[1]; activated => { root.density-changed(1); } }
+            MenuItem { title: Tr.density + ": " + Tr.density-options[2]; activated => { root.density-changed(2); } }
+            MenuItem { title: "Español"; activated => { root.language-changed(0); } }
+            MenuItem { title: "English"; activated => { root.language-changed(1); } }
+        }
+        Menu {
+            title: Tr.m-help;
+            MenuItem { title: Tr.s-check; activated => { root.show-settings = true; } }
+            MenuItem { title: Tr.about; activated => { root.show-about = true; } }
+        }
+    }
+
     VerticalLayout {
-        padding: 12px;
-        spacing: 10px;
-
-        HorizontalLayout {
-            spacing: 8px;
-            LineEdit {
-                min-width: 80px;
-                horizontal-stretch: 1;
-                placeholder-text: Tr.filter-hint;
-                accessible-label: Tr.filter-hint;
-                edited(t) => { root.filter-changed(t); }
-            }
-            Button {
-                text: Tr.refresh;
-                enabled: !root.loading;
-                clicked => { root.refresh(); }
-            }
-            ComboBox {
-                model: Tr.theme-options;
-                current-index: root.theme-index;
-                accessible-label: Tr.theme;
-                selected(_) => { root.theme-changed(self.current-index); }
-            }
-            ComboBox {
-                model: Tr.density-options;
-                current-index: root.density-index;
-                accessible-label: Tr.density;
-                selected(_) => { root.density-changed(self.current-index); }
-            }
-            ComboBox {
-                model: ["Español", "English"];
-                current-index: root.language-index;
-                accessible-label: Tr.language;
-                selected(_) => { root.language-changed(self.current-index); }
-            }
-            Button {
-                text: root.show-tools ? Tr.t-back : Tr.tools;
-                clicked => { root.show-tools = !root.show-tools; }
-            }
-            Button {
-                text: Tr.report;
-                enabled: !root.loading && root.disks.length > 0;
-                clicked => { root.export-report(); }
-            }
-            Button {
-                text: Tr.settings;
-                clicked => { root.show-settings = true; }
-            }
-            Button {
-                text: Tr.about;
-                clicked => { root.show-about = true; }
+        // ---- icon toolbar ----
+        Rectangle {
+            height: 66px;
+            background: Palette.alternate-background;
+            HorizontalLayout {
+                padding: 4px;
+                padding-left: 8px;
+                spacing: 2px;
+                alignment: start;
+                ToolBtn { label: Tr.refresh; icon: "M20 12a8 8 0 1 1-2.3-5.6 M20 4v5h-5"; enabled: !root.loading; clicked => { root.refresh(); } }
+                ToolBtn { label: Tr.report; icon: "M6 3h8l4 4v14H6z M14 3v4h4 M9 12h6 M9 16h6"; enabled: !root.loading && root.disks.length > 0; clicked => { root.export-report(); } }
+                Rectangle { width: 1px; background: Palette.border; }
+                ToolBtn { label: Tr.tb-clone; icon: "M8 8h12v12H8z M4 4h12v4 M4 4v12h4"; enabled: root.selected >= 0; clicked => { root.show-tools = true; } }
+                ToolBtn { label: Tr.tb-restore; icon: "M4 12a8 8 0 1 0 2.3-5.6 M4 4v5h5"; enabled: root.selected >= 0; clicked => { root.show-tools = true; } }
+                ToolBtn { label: Tr.tools; icon: "M9 4 7 20 M17 4 15 20 M4 9h16 M3 15h16"; clicked => { root.show-tools = !root.show-tools; } }
+                Rectangle { width: 1px; background: Palette.border; }
+                ToolBtn { label: Tr.settings; icon: "M4 7h10 M18 7h2 M4 17h2 M10 17h10 M16 5v4 M8 15v4"; clicked => { root.show-settings = true; } }
+                ToolBtn { label: Tr.about; icon: "M12 3a9 9 0 1 0 .001 0z M12 11v6 M12 7.5v.5"; clicked => { root.show-about = true; } }
             }
         }
-
-        Text {
-            text: root.report-status != "" ? root.report-status : Tr.read-only;
-            color: Palette.foreground.with-alpha(0.7);
-            font-size: 11px;
-            wrap: word-wrap;
-        }
+        Rectangle { height: 1px; background: Palette.border; }
 
         if root.loading: Text {
             text: Tr.loading;
@@ -217,18 +310,101 @@ export component MainWindow inherits Window {
             vertical-alignment: center;
         }
 
-        if !root.loading && root.disks.length > 0: HorizontalLayout {
-            spacing: 12px;
-
+        // ---- disk bars (selected disk) ----
+        if !root.loading && root.selected >= 0: Rectangle {
+            vertical-stretch: 0;
+            background: Palette.alternate-background;
             VerticalLayout {
-                width: 320px;
-                spacing: 6px;
-                Section { text: Tr.disks; }
+                padding: 8px;
+                spacing: 4px;
+                Text {
+                    text: root.disks[root.selected].name + "   " + root.disks[root.selected].size + " · " + root.disks[root.selected].style;
+                    font-weight: 700; font-size: 12px; color: Palette.foreground; overflow: elide;
+                }
                 Rectangle {
-                    border-width: 1px;
-                    border-color: Palette.border;
-                    border-radius: 4px;
-                    clip: true;
+                    height: 50px;
+                    accessible-role: image;
+                    accessible-label: Tr.partitions;
+                    for s in root.segments: Rectangle {
+                        x: parent.width * s.start;
+                        width: max(parent.width * s.fraction - 2px, 1px);
+                        height: parent.height;
+                        border-radius: 3px;
+                        background: s.free ? Palette.background : Palette.accent-background.with-alpha(0.85);
+                        border-width: 1px;
+                        border-color: Palette.border;
+                        clip: true;
+                        accessible-role: text;
+                        accessible-label: s.label + " " + s.size;
+                        VerticalLayout {
+                            padding: 4px;
+                            Text { text: s.label; overflow: elide; font-size: 11px; font-weight: 600; color: s.free ? Palette.foreground : Palette.accent-foreground; }
+                            Text { text: s.size; overflow: elide; font-size: 10px; color: s.free ? Palette.foreground.with-alpha(0.7) : Palette.accent-foreground; }
+                        }
+                    }
+                }
+                if root.plan-segs.length > 0: VerticalLayout {
+                    spacing: 3px;
+                    Text { text: Tr.plan-title; font-size: 10px; color: Palette.foreground.with-alpha(0.8); overflow: elide; }
+                    Rectangle {
+                        height: 30px;
+                        accessible-role: image;
+                        accessible-label: Tr.plan-title;
+                        for s in root.plan-segs: Rectangle {
+                            x: parent.width * s.start;
+                            width: max(parent.width * s.fraction - 1px, 1px);
+                            height: parent.height;
+                            border-radius: 3px;
+                            background: s.free ? Palette.background : s.changed ? #d98a1e : Palette.accent-background.with-alpha(0.85);
+                            border-width: 1px;
+                            border-color: Palette.border;
+                            clip: true;
+                            Text { x: 3px; y: 1px; text: s.free ? "" : s.label; font-size: 10px; font-weight: 600; color: Palette.accent-foreground; overflow: elide; }
+                            Text { x: 3px; y: 14px; text: s.size; font-size: 9px; color: s.free ? Palette.foreground.with-alpha(0.7) : Palette.accent-foreground; overflow: elide; }
+                        }
+                        plan-ta := TouchArea {
+                            property <MouseCursor> cur: MouseCursor.default;
+                            mouse-cursor: cur;
+                            pointer-event(e) => {
+                                if (e.button == PointerEventButton.left && e.kind == PointerEventKind.down) {
+                                    root.plan-press(self.mouse-x / self.width, 6px / self.width);
+                                } else if (e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel) {
+                                    root.plan-release();
+                                }
+                            }
+                            moved => {
+                                if (self.pressed) {
+                                    root.plan-drag(self.mouse-x / self.width);
+                                } else {
+                                    let h = root.plan-hit(self.mouse-x / self.width, 6px / self.width);
+                                    cur = h == 1 ? MouseCursor.ew-resize : h == 2 ? MouseCursor.move : MouseCursor.default;
+                                }
+                            }
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text { horizontal-stretch: 1; vertical-alignment: center; text: root.plan-text; font-size: 11px; color: Palette.foreground; overflow: elide; }
+                        Button { text: Tr.plan-reset; clicked => { root.plan-reset(); } }
+                    }
+                }
+            }
+        }
+        Rectangle { height: 1px; background: Palette.border; visible: root.selected >= 0; }
+
+        // ---- tree + tabs ----
+        if !root.loading && root.disks.length > 0: HorizontalLayout {
+            Rectangle {
+                width: 250px;
+                background: Palette.background;
+                VerticalLayout {
+                    padding: 6px;
+                    spacing: 6px;
+                    LineEdit {
+                        placeholder-text: Tr.filter-hint;
+                        accessible-label: Tr.filter-hint;
+                        edited(t) => { root.filter-changed(t); }
+                    }
                     fs := FocusScope {
                         key-pressed(e) => {
                             if (e.text == Key.DownArrow && root.selected < root.disks.length - 1) {
@@ -241,166 +417,242 @@ export component MainWindow inherits Window {
                             }
                             reject
                         }
-                        ListView {
-                            for d[i] in root.disks: Rectangle {
-                                height: root.row-h * 1.6;
-                                background: i == root.selected ? Palette.accent-background : transparent;
-                                accessible-role: list-item;
-                                accessible-label: d.name + ", " + d.size + ", " + d.style;
-                                accessible-item-selectable: true;
-                                accessible-item-selected: i == root.selected;
-                                VerticalLayout {
-                                    padding: 6px;
-                                    Text {
-                                        text: d.name + (d.tag != "" ? "  [" + d.tag + "]" : "");
-                                        overflow: elide;
-                                        color: i == root.selected ? Palette.accent-foreground : Palette.foreground;
-                                        font-weight: 600;
+                        ScrollView {
+                            VerticalLayout {
+                                alignment: start;
+                                for d[i] in root.disks: VerticalLayout {
+                                    Rectangle {
+                                        height: 26px;
+                                        background: i == root.selected ? Palette.accent-background : transparent;
+                                        accessible-role: list-item;
+                                        accessible-label: d.name + ", " + d.size + ", " + d.style;
+                                        accessible-item-selectable: true;
+                                        accessible-item-selected: i == root.selected;
+                                        HorizontalLayout {
+                                            padding-left: 6px; padding-right: 4px; spacing: 6px;
+                                            Rectangle {
+                                                width: 18px;
+                                                Path {
+                                                    width: 18px; height: 18px; viewbox-width: 24; viewbox-height: 24;
+                                                    commands: "M3 8h18v8H3z M6 12h.5 M16 12h3";
+                                                    stroke: i == root.selected ? Palette.accent-foreground : Palette.foreground;
+                                                    stroke-width: 1.8px; fill: transparent;
+                                                }
+                                            }
+                                            Text {
+                                                text: d.name + (d.tag != "" ? "  [" + d.tag + "]" : "");
+                                                overflow: elide; vertical-alignment: center; font-weight: 600; font-size: 12px;
+                                                color: i == root.selected ? Palette.accent-foreground : Palette.foreground;
+                                            }
+                                        }
+                                        TouchArea { clicked => { fs.focus(); root.disk-selected(i); } }
                                     }
-                                    Text {
-                                        text: d.size + " · " + d.style + " · " + d.detail;
-                                        overflow: elide;
-                                        font-size: 11px;
-                                        color: i == root.selected ? Palette.accent-foreground : Palette.foreground.with-alpha(0.75);
+                                    if i == root.selected: VerticalLayout {
+                                        for p in root.parts: Rectangle {
+                                            height: 22px;
+                                            HorizontalLayout {
+                                                padding-left: 30px; spacing: 6px;
+                                                Rectangle {
+                                                    width: 12px;
+                                                    Rectangle { width: 10px; height: 10px; border-radius: 2px; background: p.fs == "" ? Palette.border : Palette.accent-background; }
+                                                }
+                                                Text {
+                                                    text: (p.volume != "" ? p.volume + "  " : "") + "#" + p.num + "  " + p.size;
+                                                    overflow: elide; vertical-alignment: center; font-size: 11px; color: Palette.foreground;
+                                                }
+                                            }
+                                        }
                                     }
-                                }
-                                TouchArea {
-                                    clicked => { fs.focus(); root.disk-selected(i); }
                                 }
                             }
                         }
                     }
                 }
             }
+            Rectangle { width: 1px; background: Palette.border; }
 
             VerticalLayout {
-                spacing: 8px;
-                Section { text: root.show-tools ? Tr.tools : Tr.partitions; }
-
-                if root.selected < 0 && !root.show-tools: Text { text: Tr.select-disk; color: Palette.foreground; }
-
-                if root.selected >= 0 && !root.show-tools: Rectangle {
-                    height: 54px;
-                    accessible-role: image;
-                    accessible-label: Tr.partitions;
-                    for s in root.segments: Rectangle {
-                        x: parent.width * s.start;
-                        width: max(parent.width * s.fraction - 2px, 1px);
-                        height: parent.height;
-                        border-radius: 4px;
-                        background: s.free ? Palette.alternate-background : Palette.accent-background.with-alpha(0.85);
-                        border-width: 1px;
-                        border-color: Palette.border;
-                        clip: true;
-                        accessible-role: text;
-                        accessible-label: s.label + " " + s.size;
-                        VerticalLayout {
-                            padding: 4px;
-                            Text {
-                                text: s.label;
-                                overflow: elide;
-                                font-size: 11px;
-                                font-weight: 600;
-                                color: s.free ? Palette.foreground : Palette.accent-foreground;
-                            }
-                            Text {
-                                text: s.size;
-                                overflow: elide;
-                                font-size: 10px;
-                                color: s.free ? Palette.foreground.with-alpha(0.7) : Palette.accent-foreground;
-                            }
-                        }
+                // tab strip
+                Rectangle {
+                    height: 30px;
+                    background: Palette.alternate-background;
+                    HorizontalLayout {
+                        alignment: start;
+                        TabBtn { label: Tr.partitions; active: !root.show-tools; clicked => { root.show-tools = false; } }
+                        TabBtn { label: Tr.tools; active: root.show-tools; clicked => { root.show-tools = true; } }
                     }
                 }
+                Rectangle { height: 1px; background: Palette.border; }
 
-                if root.selected >= 0 && !root.show-tools: Rectangle {
-                    border-width: 1px;
-                    border-color: Palette.border;
-                    border-radius: 4px;
-                    VerticalLayout {
-                        HorizontalLayout {
-                            height: root.row-h;
-                            padding-left: 6px;
-                            spacing: 6px;
-                            Cell { text: Tr.col-num; width: 36px; font-weight: 700; }
-                            Cell { text: Tr.col-type; width: 140px; font-weight: 700; }
-                            Cell { text: Tr.col-fs; width: 70px; font-weight: 700; }
-                            Cell { text: Tr.col-size; width: 90px; font-weight: 700; }
-                            Cell { text: Tr.col-offset; width: 110px; font-weight: 700; }
-                            Cell { text: Tr.col-volume; font-weight: 700; }
-                        }
-                        ListView {
-                            for p in root.parts: Rectangle {
+                VerticalLayout {
+                    padding: 8px;
+                    spacing: 8px;
+
+                    if root.selected < 0 && !root.show-tools: Text { text: Tr.select-disk; color: Palette.foreground; }
+
+                    if root.selected >= 0 && !root.show-tools: Rectangle {
+                        border-width: 1px;
+                        border-color: Palette.border;
+                        VerticalLayout {
+                            Rectangle {
                                 height: root.row-h;
+                                background: Palette.alternate-background;
                                 HorizontalLayout {
                                     padding-left: 6px;
                                     spacing: 6px;
-                                    Cell { text: p.num; width: 36px; }
-                                    Cell { text: p.type; width: 140px; }
-                                    Cell { text: p.fs; width: 70px; }
-                                    Cell { text: p.size; width: 90px; }
-                                    Cell { text: p.offset; width: 110px; }
-                                    Cell { text: p.volume; }
+                                    Cell { text: Tr.col-num; width: 36px; font-weight: 700; }
+                                    Cell { text: Tr.col-type; width: 140px; font-weight: 700; }
+                                    Cell { text: Tr.col-fs; width: 70px; font-weight: 700; }
+                                    Cell { text: Tr.col-size; width: 90px; font-weight: 700; }
+                                    Cell { text: Tr.col-offset; width: 110px; font-weight: 700; }
+                                    Cell { text: Tr.col-volume; font-weight: 700; }
+                                }
+                            }
+                            ListView {
+                                for p[i] in root.parts: Rectangle {
+                                    height: root.row-h;
+                                    background: i == root.part-sel ? Palette.accent-background.with-alpha(0.35) : mod(i, 2) == 1 ? Palette.alternate-background.with-alpha(0.5) : transparent;
+                                    HorizontalLayout {
+                                        padding-left: 6px;
+                                        spacing: 6px;
+                                        Cell { text: p.num; width: 36px; }
+                                        Cell { text: p.type; width: 140px; }
+                                        Cell { text: p.fs; width: 70px; }
+                                        Cell { text: p.size; width: 90px; }
+                                        Cell { text: p.offset; width: 110px; }
+                                        Cell { text: p.volume; }
+                                    }
+                                    TouchArea { clicked => { root.part-selected(i); } }
+                                    ContextMenuArea {
+                                        Menu {
+                                            MenuItem { title: Tr.t-hex + " (" + Tr.c-part + ")"; activated => { root.part-selected(i); root.ctx-action("hex", i); } }
+                                            MenuItem { title: Tr.t-hash + " (" + Tr.c-part + ")"; activated => { root.part-selected(i); root.ctx-action("hash", i); } }
+                                            MenuItem { title: Tr.t-image + " (" + Tr.c-part + ")"; activated => { root.part-selected(i); root.ctx-action("image", i); } }
+                                            MenuItem { title: Tr.t-scan + " (" + Tr.c-part + ")"; activated => { root.part-selected(i); root.ctx-action("scan", i); } }
+                                            MenuSeparator {}
+                                            Menu {
+                                                title: Tr.c-disk;
+                                                MenuItem { title: Tr.t-ptb; activated => { root.ctx-action("ptbackup", -1); } }
+                                                MenuItem { title: Tr.t-clone; activated => { root.ctx-action("clone", -1); } }
+                                                MenuItem { title: Tr.t-restore; activated => { root.ctx-action("restore", -1); } }
+                                                MenuItem { title: Tr.report; activated => { root.ctx-action("report", -1); } }
+                                            }
+                                            MenuItem { title: Tr.c-plan; activated => { root.ctx-action("planreset", -1); } }
+                                            MenuSeparator {}
+                                            MenuItem { title: Tr.c-ops[0]; activated => { root.part-selected(i); root.ctx-action("p:delete", i); } }
+                                            MenuItem { title: Tr.c-ops[1]; activated => { root.part-selected(i); root.ctx-action("p:create", i); } }
+                                            MenuItem { title: Tr.c-ops[2]; activated => { root.part-selected(i); root.ctx-action("p:resize", i); } }
+                                            MenuItem { title: Tr.c-ops[3]; activated => { root.part-selected(i); root.ctx-action("p:merge", i); } }
+                                            MenuItem { title: Tr.c-ops[4]; activated => { root.part-selected(i); root.ctx-action("p:settype", i); } }
+                                            MenuItem { title: Tr.c-ops[5]; activated => { root.part-selected(i); root.ctx-action("p:setactive", i); } }
+                                            Menu {
+                                                title: Tr.c-ops[8];
+                                                MenuItem { title: Tr.c-ops[6]; activated => { root.ctx-action("p:initmbr", -1); } }
+                                                MenuItem { title: Tr.c-ops[7]; activated => { root.ctx-action("p:initgpt", -1); } }
+                                            }
+                                            MenuItem { title: Tr.c-future[0]; activated => { root.part-selected(i); root.ctx-action("p:format", i); } }
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
-                }
 
+                    if root.selected >= 0 && !root.show-tools: VerticalLayout {
+                        vertical-stretch: 0;
+                        spacing: 3px;
+                        Section { text: Tr.health + ": " + root.health-text; }
+                        Section { text: Tr.diagnostics; }
+                        if root.diags.length == 0: Text { text: Tr.no-diag; color: Palette.foreground; }
+                        for g in root.diags: Text {
+                            text: (g.severity == 2 ? "✖ " : g.severity == 1 ? "⚠ " : "• ") + g.text;
+                            color: g.severity == 2 ? #d9534f : g.severity == 1 ? #e0a030 : Palette.foreground;
+                            wrap: word-wrap;
+                        }
+                    }
 
-                if root.show-tools: VerticalLayout {
-                    spacing: 8px;
-                    Section { text: root.source-label; }
-                    Text { text: Tr.t-note; color: Palette.foreground.with-alpha(0.7); font-size: 11px; wrap: word-wrap; }
-                    HorizontalLayout {
+                    if root.show-tools: VerticalLayout {
                         spacing: 8px;
-                        Button { text: Tr.t-open; enabled: !root.tool-busy; clicked => { root.tool-open-file(); } }
-                        Button { text: Tr.t-hash; enabled: !root.tool-busy; clicked => { root.tool-run("hash", ""); } }
-                        Button { text: Tr.t-image; enabled: !root.tool-busy; clicked => { root.tool-run("image", ""); } }
-                        Button { text: Tr.t-scan; enabled: !root.tool-busy; clicked => { root.tool-run("scan", ""); } }
-                        Button { text: Tr.t-ptb; enabled: !root.tool-busy; clicked => { root.tool-run("ptbackup", ""); } }
-                        Button { text: Tr.t-cancel; enabled: root.tool-busy; clicked => { root.tool-cancel(); } }
-                    }
-                    HorizontalLayout {
-                        spacing: 8px;
-                        Text { text: Tr.t-offset; color: Palette.foreground; vertical-alignment: center; }
-                        LineEdit { width: 160px; text <=> root.hex-offset; accessible-label: Tr.t-offset; }
-                        Button { text: Tr.t-hex; enabled: !root.tool-busy; clicked => { root.tool-run("hex", root.hex-offset); } }
-                        Button { text: Tr.t-prev; enabled: !root.tool-busy; clicked => { root.tool-run("hexprev", root.hex-offset); } }
-                        Button { text: Tr.t-next; enabled: !root.tool-busy; clicked => { root.tool-run("hexnext", root.hex-offset); } }
-                    }
-                    HorizontalLayout {
-                        spacing: 8px;
-                        Button { text: Tr.t-restore; enabled: !root.tool-busy; clicked => { root.restore-preview(); } }
-                        LineEdit { horizontal-stretch: 1; enabled: root.restore-ready; placeholder-text: Tr.t-confirm-hint; text <=> root.restore-confirm; accessible-label: Tr.t-confirm-hint; }
-                        Button { text: Tr.t-apply; enabled: root.restore-ready && !root.tool-busy; clicked => { root.restore-apply(root.restore-confirm); } }
-                    }
-                    Rectangle {
-                        height: 14px;
-                        border-width: 1px; border-color: Palette.border;
-                        accessible-role: progress-indicator;
-                        accessible-value: root.tool-status;
-                        Rectangle { x: 0; width: parent.width * root.tool-progress; background: Palette.accent-background; }
-                    }
-                    Text { text: root.tool-status; color: Palette.foreground; wrap: word-wrap; }
-                    Rectangle {
-                        border-width: 1px; border-color: Palette.border; clip: true;
-                        ScrollView {
-                            Text { x: 0; horizontal-alignment: left; text: root.tool-output; font-family: "Consolas"; font-size: 12px; color: Palette.foreground; }
+                        Section { text: root.source-label; }
+                        Text { text: Tr.t-note; color: Palette.foreground.with-alpha(0.7); font-size: 11px; wrap: word-wrap; }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Button { text: Tr.t-open; enabled: !root.tool-busy; clicked => { root.tool-open-file(); } }
+                            Button { text: Tr.t-hash; enabled: !root.tool-busy; clicked => { root.tool-run("hash", ""); } }
+                            Button { text: Tr.t-image; enabled: !root.tool-busy; clicked => { root.tool-run("image", ""); } }
+                            Button { text: Tr.t-scan; enabled: !root.tool-busy; clicked => { root.tool-run("scan", ""); } }
+                            Button { text: Tr.t-recover; enabled: !root.tool-busy; clicked => { root.tool-run("recover", ""); } }
+                            Button { text: Tr.t-ptb; enabled: !root.tool-busy; clicked => { root.tool-run("ptbackup", ""); } }
+                            Button { text: Tr.t-cancel; enabled: root.tool-busy; clicked => { root.tool-cancel(); } }
+                        }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Text { text: Tr.t-offset; color: Palette.foreground; vertical-alignment: center; }
+                            LineEdit { width: 160px; text <=> root.hex-offset; accessible-label: Tr.t-offset; }
+                            Button { text: Tr.t-hex; enabled: !root.tool-busy; clicked => { root.tool-run("hex", root.hex-offset); } }
+                            Button { text: Tr.t-prev; enabled: !root.tool-busy; clicked => { root.tool-run("hexprev", root.hex-offset); } }
+                            Button { text: Tr.t-next; enabled: !root.tool-busy; clicked => { root.tool-run("hexnext", root.hex-offset); } }
+                        }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Button { text: Tr.t-restore; enabled: !root.tool-busy; clicked => { root.restore-preview(); } }
+                            LineEdit { horizontal-stretch: 1; enabled: root.restore-ready; placeholder-text: Tr.t-confirm-hint; text <=> root.restore-confirm; accessible-label: Tr.t-confirm-hint; }
+                            Button { text: Tr.t-apply; enabled: root.restore-ready && !root.tool-busy; clicked => { root.restore-apply(root.restore-confirm); } }
+                        }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Text { text: Tr.t-clone-target; color: Palette.foreground; vertical-alignment: center; }
+                            LineEdit { width: 60px; text <=> root.clone-target; accessible-label: Tr.t-clone-target; }
+                            Button { text: Tr.t-clone; enabled: !root.tool-busy; clicked => { root.clone-preview(root.clone-target); } }
+                            LineEdit { horizontal-stretch: 1; enabled: root.clone-ready; placeholder-text: Tr.t-confirm-hint; text <=> root.clone-confirm; accessible-label: Tr.t-confirm-hint; }
+                            Button { text: Tr.t-clone-apply; enabled: root.clone-ready && !root.tool-busy; clicked => { root.clone-apply(root.clone-confirm); } }
+                        }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Text { text: Tr.e-start; color: Palette.foreground; vertical-alignment: center; }
+                            LineEdit { width: 70px; text <=> root.edit-start; accessible-label: Tr.e-start; }
+                            Text { text: Tr.e-size; color: Palette.foreground; vertical-alignment: center; }
+                            LineEdit { width: 70px; text <=> root.edit-size; accessible-label: Tr.e-size; }
+                            Text { text: Tr.e-type; color: Palette.foreground; vertical-alignment: center; }
+                            LineEdit { width: 90px; text <=> root.edit-type; accessible-label: Tr.e-type; }
+                            Button { text: Tr.c-ops[1]; enabled: !root.tool-busy; clicked => { root.part-preview("create", -1); } }
+                            Button { text: Tr.c-ops[2]; enabled: !root.tool-busy; clicked => { root.part-preview("resize", root.part-sel); } }
+                        }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Text { text: Tr.e-preview; color: Palette.foreground; vertical-alignment: center; }
+                            LineEdit { horizontal-stretch: 1; enabled: root.part-ready; placeholder-text: Tr.t-confirm-hint; text <=> root.part-confirm; accessible-label: Tr.t-confirm-hint; }
+                            Button { text: Tr.e-apply; enabled: root.part-ready && !root.tool-busy; clicked => { root.part-apply(root.part-confirm); } }
+                        }
+                        Rectangle {
+                            height: 14px;
+                            border-width: 1px; border-color: Palette.border;
+                            accessible-role: progress-indicator;
+                            accessible-value: root.tool-status;
+                            Rectangle { x: 0; width: parent.width * root.tool-progress; background: Palette.accent-background; }
+                        }
+                        Text { text: root.tool-status; color: Palette.foreground; wrap: word-wrap; }
+                        Rectangle {
+                            border-width: 1px; border-color: Palette.border; clip: true;
+                            ScrollView {
+                                Text { x: 0; horizontal-alignment: left; text: root.tool-output; font-family: "Consolas"; font-size: 12px; color: Palette.foreground; }
+                            }
                         }
                     }
                 }
-                if root.selected >= 0 && !root.show-tools: VerticalLayout {
-                    spacing: 4px;
-                    Section { text: Tr.health + ": " + root.health-text; }
-                    Section { text: Tr.diagnostics; }
-                    if root.diags.length == 0: Text { text: Tr.no-diag; color: Palette.foreground; }
-                    for g in root.diags: Text {
-                        text: (g.severity == 2 ? "✖ " : g.severity == 1 ? "⚠ " : "• ") + g.text;
-                        color: g.severity == 2 ? #d9534f : g.severity == 1 ? #e0a030 : Palette.foreground;
-                        wrap: word-wrap;
-                    }
-                }
+            }
+        }
+
+        // ---- status bar ----
+        Rectangle { height: 1px; background: Palette.border; }
+        Rectangle {
+            height: 24px;
+            background: Palette.alternate-background;
+            Text {
+                x: 8px; width: parent.width - 16px;
+                text: root.report-status != "" ? root.report-status : Tr.read-only;
+                vertical-alignment: center; overflow: elide; font-size: 11px;
+                color: Palette.foreground.with-alpha(0.8);
             }
         }
     }

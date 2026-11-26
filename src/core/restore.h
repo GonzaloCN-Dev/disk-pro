@@ -1,4 +1,4 @@
-// Disk Pro - MIT License - Copyright (c) Gonzalo Cruz Núñez
+﻿// Disk Pro - MIT License - Copyright (c) Gonzalo Cruz Núñez
 // Write engine (partition table restore). Separate from the read-only code: nothing in tools.h can write.
 // Policy of this version: only small VIRTUAL disks, never the system disk, typed confirmation, read-back verification.
 #pragma once
@@ -16,6 +16,9 @@ public:
     virtual ~ByteSink() = default;
     virtual bool write(uint64_t offset, const void* buf, size_t len) = 0;
     virtual bool flush() = 0;
+    // Called before writing inside [offset, offset+length): a platform sink may lock/dismount volumes there.
+    // Returning false forbids the write. The default does nothing.
+    virtual bool prepare(uint64_t /*offset*/, uint64_t /*length*/) { return true; }
 };
 
 // Writes into an EXISTING file (used by tests / image files). Never creates or grows the file.

@@ -2,7 +2,7 @@
 ; Compilar con: installer\build-installer.ps1
 
 #ifndef AppVersion
-  #define AppVersion "0.3.1"
+  #define AppVersion "0.5.0"
 #endif
 #define AppName "Disk Pro"
 #define AppPublisher "Gonzalo Cruz Núñez"
@@ -51,6 +51,8 @@ Source: "payload\diskpro-cli.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "payload\diskpro-inventory.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "payload\diskpro-tools.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "payload\diskpro-restore.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "payload\diskpro-clone.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "payload\diskpro-part.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "payload\*.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "payload\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "payload\LICENSE"; DestDir: "{app}"; Flags: ignoreversion

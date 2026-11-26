@@ -1,4 +1,4 @@
-// Synthetic in-memory images only. No real disks are touched.
+﻿// Synthetic in-memory images only. No real disks are touched.
 #include <cstdio>
 #include <cstring>
 
@@ -178,5 +178,19 @@ int main() {
     testGptCorruption(); testMbr(); testMbrOverlapAndRange();
     testExtendedLoop(); testRawAndTiny(); testCrc(); testFixedVhdFooter(); testIoErrors();
     std::printf(failures ? "%d FAILURES\n" : "all tests passed\n", failures);
-    return failures ? 1 : 0;
+        {   // RangeSource: a window over another source, never reads outside it
+        std::vector<uint8_t> raw(4096); for (size_t i = 0; i < raw.size(); ++i) raw[i] = uint8_t(i & 0xFF);
+        auto base = std::make_shared<MemorySource>(raw);
+        RangeSource w(base, 1000, 500);
+        uint8_t b[16] = {};
+        CHECK(w.size() == 500);
+        CHECK(w.read(0, b, 16) && b[0] == uint8_t(1000 & 0xFF) && b[15] == uint8_t(1015 & 0xFF));
+        CHECK(w.read(484, b, 16));                 // last 16 bytes
+        CHECK(!w.read(485, b, 16));                // would cross the end
+        CHECK(!w.read(501, b, 1));
+        RangeSource clamped(base, 4000, 5000);     // longer than the base: clamped
+        CHECK(clamped.size() == 96);
+        RangeSource beyond(base, 9000, 10);        // starts outside: empty
+        CHECK(beyond.size() == 0 && !beyond.read(0, b, 1));
+    }return failures ? 1 : 0;
 }

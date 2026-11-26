@@ -19,6 +19,11 @@
 #include "device.h"
 #include "tools.h"
 #include "restore.h"
+#include "partops.h"
+#include "format.h"
+#include "recover.h"
+#include "clone.h"
+#include "resizeplan.h"
 #include "updater.h"
 #include "report.h"
 #include <fstream>
@@ -40,13 +45,13 @@ struct Strings {
 
 const Strings kEs = {"Disk Pro", "Discos", "Particiones", "Diagnóstico (solo lectura)", "Filtrar discos…", "Actualizar", "Tema",
                      "Idioma", "Densidad", "Acerca de", "Cerrar", "Cargando discos…", "No se encontraron discos.", "Error: ",
-                     "Solo lectura, salvo «Restaurar tabla», que escribe únicamente en discos virtuales (VHD).", "Salud", "Sin incidencias detectadas.", "N.º",
+                     "Solo lectura, salvo «Restaurar tabla», «Clonar» y la edición de tabla, que escriben únicamente en discos virtuales (VHD).", "Salud", "Sin incidencias detectadas.", "N.º",
                      "Tipo", "Sistema", "Tamaño", "Desplazamiento", "Volumen", "Libre",
                      "© Gonzalo Cruz Núñez · GCN Dev. Software libre bajo licencia MIT.", "Selecciona un disco.",
                      {"Sistema", "Claro", "Oscuro"}, {"Compacta", "Normal", "Amplia"}};
 const Strings kEn = {"Disk Pro", "Disks", "Partitions", "Diagnostics (read-only)", "Filter disks…", "Refresh", "Theme",
                      "Language", "Density", "About", "Close", "Loading disks…", "No disks found.", "Error: ",
-                     "Read-only, except 'Restore table', which only writes to virtual disks (VHD).", "Health", "No issues found.", "No.",
+                     "Read-only, except 'Restore table' and 'Clone', which only write to virtual disks (VHD).", "Health", "No issues found.", "No.",
                      "Type", "File system", "Size", "Offset", "Volume", "Free",
                      "© Gonzalo Cruz Núñez · GCN Dev. Free software under the MIT license.", "Select a disk.",
                      {"System", "Light", "Dark"}, {"Compact", "Normal", "Comfortable"}};
@@ -128,7 +133,76 @@ int main(int argc, char** argv) {
     auto filterText = std::make_shared<std::string>();
     auto selected = std::make_shared<int>(-1);
 
-    auto showDisk = [ui, st, selected](int visIdx) {
+    // ---- Interactive partition bar (planning only: nothing is ever written from here) ----
+    struct PlanState {
+        std::vector<PlanPart> orig, cur;
+        uint64_t diskSize = 0;
+        bool dragging = false;
+        int index = 0;
+        DragEdge edge = DragEdge::Move;
+        uint64_t grab = 0;
+        std::vector<std::string> warnings;
+    };
+    auto plan = std::make_shared<PlanState>();
+    auto refreshPlan = [ui, plan, &lang]() {
+        auto segs = vec<PlanSeg>();
+        const bool en = lang == 1;
+        if (plan->diskSize == 0) { ui->set_plan_segs(segs); ui->set_plan_text(S("")); return; }
+        auto sorted = plan->cur;
+        std::sort(sorted.begin(), sorted.end(), [](auto& a, auto& b) { return a.offset < b.offset; });
+        double D = double(plan->diskSize);
+        uint64_t pos = 0;
+        auto changedOf = [&](int idx) {
+            for (auto& o : plan->orig) if (o.index == idx)
+                for (auto& c : plan->cur) if (c.index == idx) return o.offset != c.offset || o.length != c.length;
+            return false;
+        };
+        for (auto& p : sorted) {
+            if (p.offset > pos) segs->push_back({S(""), S(humanSize(p.offset - pos)), float(pos / D), float((p.offset - pos) / D), true, false});
+            segs->push_back({S("#" + std::to_string(p.index)), S(humanSize(p.length)), float(p.offset / D), float(p.length / D), false, changedOf(p.index)});
+            pos = p.offset + p.length;
+        }
+        if (pos < plan->diskSize) segs->push_back({S(""), S(humanSize(plan->diskSize - pos)), float(pos / D), float((plan->diskSize - pos) / D), true, false});
+        ui->set_plan_segs(segs);
+        std::string txt;
+        bool any = false;
+        for (auto& p : plan->cur) if (changedOf(p.index)) {
+            any = true;
+            txt += "#" + std::to_string(p.index) + ": " + humanSize(p.offset) + " + " + humanSize(p.length) + "   ";
+        }
+        if (!any) txt = en ? "Drag an edge to resize or the body to move. Preview only: nothing is written." : "Arrastra un borde para cambiar el tamaño o el cuerpo para mover. Solo vista previa: no se escribe nada.";
+        else txt += en ? "(PREVIEW ONLY, this version does not apply it)" : "(SOLO VISTA PREVIA: esta versión no lo aplica)";
+        ui->set_plan_text(S(txt));
+    };
+    ui->on_plan_hit([plan](float x, float tolFrac) -> int {
+        if (plan->diskSize == 0) return 0;
+        auto h = hitTest(plan->cur, uint64_t(double(x) * double(plan->diskSize)), uint64_t(double(tolFrac) * double(plan->diskSize)));
+        return !h.found ? 0 : h.edge == DragEdge::Move ? 2 : 1;
+    });
+    ui->on_plan_press([plan](float x, float tolFrac) {
+        if (plan->diskSize == 0) return;
+        uint64_t pos = uint64_t(double(x) * double(plan->diskSize));
+        auto h = hitTest(plan->cur, pos, uint64_t(double(tolFrac) * double(plan->diskSize)));
+        if (!h.found) return;
+        plan->dragging = true; plan->index = h.index; plan->edge = h.edge;
+        plan->grab = 0;
+        for (auto& p : plan->cur) if (p.index == h.index) plan->grab = pos > p.offset ? pos - p.offset : 0;
+    });
+    ui->on_plan_drag([plan, refreshPlan](float x) {
+        if (!plan->dragging) return;
+        double fx = std::min(1.0, std::max(0.0, double(x)));
+        uint64_t pos = uint64_t(fx * double(plan->diskSize));
+        // always plan from the original geometry so the result does not depend on the path of the mouse
+        auto out = planResize(plan->diskSize, plan->orig, plan->index, plan->edge, pos, plan->grab);
+        if (!out.valid) return;
+        plan->cur = plan->orig;
+        for (auto& p : plan->cur) if (p.index == plan->index) { p.offset = out.offset; p.length = out.length; }
+        plan->warnings = out.warnings;
+        refreshPlan();
+    });
+    ui->on_plan_release([plan]() { plan->dragging = false; });
+    ui->on_plan_reset([plan, refreshPlan]() { plan->cur = plan->orig; plan->dragging = false; plan->warnings.clear(); refreshPlan(); });
+    auto showDisk = [ui, st, selected, plan, refreshPlan](int visIdx) {
         auto parts = vec<PartRow>();
         auto segs = vec<SegRow>();
         auto diags = vec<DiagRow>();
@@ -143,6 +217,9 @@ int main(int argc, char** argv) {
                                   S(humanSize(p.lengthBytes)), S(humanSize(p.offsetBytes)), S(p.volume)});
                 ex.push_back({int(p.number), p.offsetBytes, p.lengthBytes});
             }
+            plan->orig.clear(); plan->diskSize = d.sizeBytes; plan->dragging = false; plan->warnings.clear();
+            for (auto& p : d.partitions) plan->orig.push_back({int(p.number), p.offsetBytes, p.lengthBytes});
+            plan->cur = plan->orig;
             auto map = buildMap(d.sizeBytes, d.physicalSector > 4096 ? 4096 : d.physicalSector, ex);
             float x = 0;
             const Strings& t = ui->get_language_index() == 1 ? kEn : kEs;
@@ -161,6 +238,8 @@ int main(int argc, char** argv) {
             if (!d.error.empty()) diags->push_back({1, S("Partial data: " + d.error)});
             ui->set_health_text(S(st->health[di]));
         }
+        if (visIdx < 0 || visIdx >= int(st->visible.size())) { plan->diskSize = 0; plan->orig.clear(); plan->cur.clear(); }
+        refreshPlan();
         ui->set_parts(parts); ui->set_segments(segs); ui->set_diags(diags);
     };
 
@@ -216,6 +295,25 @@ int main(int argc, char** argv) {
     ui->on_refresh(refresh);
     ui->on_disk_selected(showDisk);
     ui->on_filter_changed([filterText, rebuildList](slint::SharedString t) { *filterText = std::string(t); rebuildList(); });
+    auto partRange = std::make_shared<std::pair<uint64_t, uint64_t>>(0, 0);   // length 0 = whole disk
+    ui->on_quit([]() { slint::quit_event_loop(); });
+    ui->on_part_selected([ui](int i) { ui->set_part_sel(i); });
+    ui->on_ctx_action([ui, st, selected, partRange](slint::SharedString a, int pi) {
+        std::string act(a);
+        ui->set_show_tools(true);
+        if (act.rfind("p:", 0) == 0) { ui->invoke_part_preview(slint::SharedString(act.substr(2)), pi); return; }
+        if (act == "clone") return;
+        if (act == "restore") { ui->invoke_restore_preview(); return; }
+        if (act == "report") { ui->invoke_export_report(); return; }
+        if (act == "planreset") { ui->invoke_plan_reset(); ui->set_show_tools(false); return; }
+        *partRange = {0, 0};
+        if (pi >= 0 && *selected >= 0 && *selected < int(st->visible.size())) {
+            const auto& d = st->disks[st->visible[*selected]];
+            if (pi < int(d.partitions.size())) *partRange = {d.partitions[pi].offsetBytes, d.partitions[pi].lengthBytes};
+        }
+        ui->invoke_tool_run(slint::SharedString(act), slint::SharedString(act == "hex" ? "0" : ""));
+        *partRange = {0, 0};
+    });
     ui->on_theme_changed([ui, settings](int i) { ui->set_theme_index(i); settings->theme = i; settings->save(); });
     ui->on_density_changed([ui, settings](int i) { ui->set_density_index(i); settings->density = i; settings->save(); });
     ui->on_language_changed([ui, settings, applyStrings, &lang, rebuildList](int i) {
@@ -227,11 +325,21 @@ int main(int argc, char** argv) {
     auto toolStrings = [ui, &lang]() {
         const ToolStr& s = lang == 1 ? kToolEn : kToolEs;
         auto& g = ui->global<Tr>();
-        g.set_tools(S(s.tools)); g.set_t_hash(S(s.hash)); g.set_t_image(S(s.image)); g.set_t_scan(S(s.scan));
+        g.set_tools(S(s.tools)); g.set_t_hash(S(s.hash)); g.set_t_image(S(s.image)); g.set_t_scan(S(s.scan)); g.set_t_recover(S(lang == 1 ? "Find lost partitions" : "Buscar particiones perdidas"));
         g.set_t_hex(S(s.hex)); g.set_t_open(S(s.open)); g.set_t_cancel(S(s.cancel)); g.set_t_prev(S(s.prev));
         g.set_t_next(S(s.next)); g.set_t_offset(S(s.offset)); g.set_t_back(S(s.back)); g.set_t_ptb(S(lang == 1 ? "Back up partition table…" : "Copia de la tabla de particiones…")); g.set_t_note(S(s.note));
         g.set_t_restore(S(lang == 1 ? "Restore table (VHD only)…" : "Restaurar tabla (solo VHD)…"));
         g.set_t_apply(S(lang == 1 ? "Apply restore" : "Aplicar restauración"));
+        g.set_m_file(S(lang == 1 ? "File" : "Archivo")); g.set_m_disk(S(lang == 1 ? "Disk" : "Disco")); g.set_m_view(S(lang == 1 ? "View" : "Ver"));
+        g.set_m_help(S(lang == 1 ? "Help" : "Ayuda")); g.set_m_exit(S(lang == 1 ? "Exit" : "Salir"));
+        g.set_tb_clone(S(lang == 1 ? "Clone" : "Clonar")); g.set_tb_restore(S(lang == 1 ? "Restore" : "Restaurar"));
+        g.set_c_soon(S(lang == 1 ? "(coming soon)" : "(próximamente)")); g.set_c_part(S(lang == 1 ? "partition" : "partición")); g.set_c_disk(S(lang == 1 ? "Whole disk" : "Disco completo")); g.set_c_plan(S(lang == 1 ? "Reset plan" : "Restablecer plan"));
+        { std::vector<slint::SharedString> fu; for (const char* x : (lang == 1 ? std::vector<const char*>{"Format as FAT32"} : std::vector<const char*>{"Formatear como FAT32"})) fu.push_back(S(x)); g.set_c_future(std::make_shared<slint::VectorModel<slint::SharedString>>(fu)); }
+        g.set_plan_title(S(lang == 1 ? "Plan (drag edges to resize, the body to move; preview only)" : "Plan (arrastra los bordes para redimensionar, el cuerpo para mover; solo vista previa)"));
+        g.set_plan_reset(S(lang == 1 ? "Reset plan" : "Restablecer plan"));
+        g.set_t_clone(S(lang == 1 ? "Clone preview" : "Vista previa de clonado"));
+        g.set_t_clone_apply(S(lang == 1 ? "Clone" : "Clonar"));
+        g.set_t_clone_target(S(lang == 1 ? "Clone to disk #" : "Clonar al disco n.º"));
         g.set_t_confirm_hint(S(lang == 1 ? "Confirmation text" : "Texto de confirmación"));
     };
     (void)ts;
@@ -305,7 +413,169 @@ int main(int argc, char** argv) {
         ui->set_tool_status(S(msg));
         if (res.ok || res.written) clearPending();
     });
-    ui->on_tool_run([ui, st, selected, filePath, cancelFlag, toolBusy, &lang](slint::SharedString cmdS, slint::SharedString arg) {
+    struct PendingPart { PartOpPlan plan; FormatPlan fplan; bool isFormat = false; int disk = -1; uint32_t ss = 512; };
+    auto pendingPart = std::make_shared<PendingPart>();
+    auto clearPart = [ui, pendingPart]() { *pendingPart = PendingPart{}; ui->set_part_ready(false); ui->set_part_confirm(S("")); };
+    ui->on_part_preview([ui, st, selected, filePath, pendingPart, clearPart, &lang](slint::SharedString opS, int pi) {
+        const bool en = lang == 1;
+        clearPart();
+        auto say = [&](const std::string& es, const std::string& e) { ui->set_tool_status(S(en ? e : es)); };
+        if (!filePath->empty() || *selected < 0 || *selected >= int(st->visible.size())) { say("Selecciona primero un disco de la lista.", "Select a disk in the list first."); return; }
+        const win::DiskInfo& disk = st->disks[st->visible[*selected]];
+        DeviceSource src{static_cast<int>(disk.number)};
+        if (!src.ok()) { say("No se puede abrir el disco (ejecuta como administrador).", "Cannot open the disk (run as administrator)."); return; }
+        TargetFacts t;
+        t.number = disk.number; t.size = src.size(); t.sectorSize = disk.logicalSector ? disk.logicalSector : 512;
+        t.isSystemDisk = disk.isSystemDisk; t.isVirtual = disk.isVirtual;
+        const uint64_t ss = t.sectorSize;
+        auto layout = analyze(src, t.sectorSize);
+        // GUI row -> table index, matched by start offset (Windows numbering can differ from table order)
+        auto tableIndex = [&](int row) {
+            if (row < 0 || row >= int(disk.partitions.size())) return 0;
+            for (auto& p : layout.partitions) if (p.firstLba * ss == disk.partitions[size_t(row)].offsetBytes) return p.index;
+            return 0;
+        };
+        auto mib = [](const std::string& s, uint64_t& out) { char* e = nullptr; unsigned long long v = std::strtoull(s.c_str(), &e, 10); if (s.empty() || *e) return false; out = v; return true; };
+        std::string op(opS);
+        PartOp p;
+        using K = PartOp::Kind;
+        FormatOp fo;
+        if (op == "format") {
+            fo.index = tableIndex(pi);
+            if (!fo.index) { say("Selecciona una partición de la tabla (clic en una fila).", "Select a partition row first."); return; }
+        } else if (op == "initmbr") p.kind = K::InitMbr;
+        else if (op == "initgpt") p.kind = K::InitGpt;
+        else if (op == "delete" || op == "setactive" || op == "settype" || op == "resize" || op == "merge") {
+            p.index = tableIndex(pi);
+            if (!p.index) { say("Selecciona una partición de la tabla (clic en una fila).", "Select a partition row first."); return; }
+            p.kind = op == "delete" ? K::Delete : op == "setactive" ? K::SetActive : op == "settype" ? K::SetType : op == "resize" ? K::Resize : K::Merge;
+            if (op == "merge") {
+                p.index2 = tableIndex(pi + 1);
+                if (!p.index2) { say("No hay una partición siguiente para fusionar.", "There is no next partition to merge."); return; }
+            }
+        } else if (op == "create") p.kind = K::Create;
+        else return;
+        if (p.kind == K::Create || p.kind == K::Resize) {
+            uint64_t a = 0, b = 0;
+            if (!mib(std::string(ui->get_edit_start()), a) || !mib(std::string(ui->get_edit_size()), b) || b == 0) { say("Rellena Inicio y Tamaño en MiB (números enteros).", "Fill in Start and Size in MiB (whole numbers)."); return; }
+            if (a > (1ull << 40) || b > (1ull << 40)) { say("Valores demasiado grandes.", "Values too large."); return; }
+            p.firstLba = a * 1048576ull / ss; p.sectorCount = b * 1048576ull / ss;
+        }
+        if (p.kind == K::Create || p.kind == K::SetType) p.type = std::string(ui->get_edit_type());
+        PartOpPlan plan; FormatPlan fplan;
+        if (op == "format") {
+            fplan = planFormat(src, t, fo);
+            plan.allowed = fplan.allowed; plan.blockers = fplan.blockers; plan.warnings = fplan.warnings; plan.writes = fplan.writes; plan.token = fplan.token; plan.summary = fplan.summary;
+        } else plan = planPartOp(src, t, p);
+        if (op != "format" && !disk.volumes.empty()) { plan.blockers.push_back("The disk has mounted volumes (drive letters): unmount/clear them first."); plan.allowed = false; }
+        std::string o = "=== PREVIEW ===\nDisk " + std::to_string(disk.number) + "  " + disk.vendor + " " + disk.product + "  " + disk.busType + "  " + humanSize(t.size) + "\n";
+        if (plan.allowed) { o += "OPERATION: " + plan.summary + "\n"; for (auto& w : plan.writes) o += "WILL WRITE: offset " + std::to_string(w.offset) + ", " + std::to_string(w.data.size()) + " bytes\n"; }
+        for (auto& w : plan.warnings) o += "WARNING: " + w + "\n";
+        for (auto& b : plan.blockers) o += "BLOCKED: " + b + "\n";
+        ui->set_tool_output(S(o));
+        if (!plan.allowed) { say("No permitido. No se escribirá nada.", "Not allowed. Nothing will be written."); return; }
+        pendingPart->plan = plan; pendingPart->fplan = fplan; pendingPart->isFormat = (op == "format"); pendingPart->disk = int(disk.number); pendingPart->ss = t.sectorSize;
+        ui->set_part_ready(true);
+        ui->set_tool_status(S((en ? "Type exactly: " : "Escribe exactamente: ") + plan.token));
+    });
+    ui->on_part_apply([ui, pendingPart, clearPart, &lang](slint::SharedString typed) {
+        const bool en = lang == 1;
+        if (pendingPart->disk < 0) return;
+        DeviceSource rb{pendingPart->disk};
+        DeviceSink sink{pendingPart->disk};
+        if (!rb.ok() || !sink.ok()) { ui->set_tool_status(S(en ? "Cannot open the disk for writing (administrator?)." : "No se puede abrir el disco para escribir (¿administrador?).")); return; }
+        auto res = pendingPart->isFormat ? applyFormat(pendingPart->fplan, std::string(typed), sink, rb) : applyPartOp(pendingPart->plan, std::string(typed), sink, rb, pendingPart->ss);
+        sink.refreshLayout();
+        std::string msg = res.ok ? (en ? "Done: written, flushed and verified by reading back. Press Refresh." : "Hecho: escrito, vaciado y verificado releyendo. Pulsa Actualizar.")
+                                 : (en ? "FAILED: " : "ERROR: ") + res.error + (res.written ? (en ? " (the table may be partially written)" : " (la tabla puede haber quedado a medias)") : "");
+        ui->set_tool_status(S(msg));
+        if (res.ok || res.written) clearPart();
+    });
+    struct PendingClone { ClonePlan plan; std::shared_ptr<ByteSource> src; int target = -1; };
+    auto pendingClone = std::make_shared<PendingClone>();
+    auto clearClone = [ui, pendingClone]() { *pendingClone = PendingClone{}; ui->set_clone_ready(false); ui->set_clone_confirm(S("")); };
+    ui->on_clone_preview([ui, st, selected, filePath, pendingClone, clearClone, toolBusy, &lang](slint::SharedString targetS) {
+        const bool en = lang == 1;
+        clearClone();
+        if (toolBusy->load()) return;
+        std::string ts(targetS);
+        char* e = nullptr;
+        long tn = std::strtol(ts.c_str(), &e, 10);
+        if (ts.empty() || *e || tn < 0) { ui->set_tool_status(S(en ? "Type the target disk number." : "Escribe el número del disco de destino.")); return; }
+        const win::DiskInfo* target = nullptr;
+        for (auto& d : st->disks) if (d.number == uint32_t(tn)) target = &d;
+        if (!target) { ui->set_tool_status(S(en ? "Target disk not found." : "No se encuentra el disco de destino.")); return; }
+        std::shared_ptr<ByteSource> src;
+        CloneSourceFacts sf;
+        if (!filePath->empty()) {
+            auto f = std::make_shared<FileSource>(*filePath);
+            if (!f->ok()) { ui->set_tool_status(S(en ? "Cannot open the image." : "No se puede abrir la imagen.")); return; }
+            sf.label = *filePath; sf.sectorSize = target->logicalSector ? target->logicalSector : 512; src = f;
+        } else if (*selected >= 0 && *selected < int(st->visible.size())) {
+            const win::DiskInfo& sd = st->disks[st->visible[*selected]];
+            auto d = std::make_shared<DeviceSource>(sd.number);
+            if (!d->ok()) { ui->set_tool_status(S(en ? "Cannot open the source disk (administrator?)." : "No se puede abrir el disco de origen (¿administrador?).")); return; }
+            sf.label = "Disk " + std::to_string(sd.number); sf.sectorSize = sd.logicalSector ? sd.logicalSector : 512;
+            sf.isTargetItself = sd.number == target->number; src = d;
+        } else { ui->set_tool_status(S(en ? "Select a source disk in the list (or open an image)." : "Selecciona un disco de origen en la lista (o abre una imagen).")); return; }
+        sf.size = src->size();
+        DeviceSource back{static_cast<int>(target->number)};
+        if (!back.ok()) { ui->set_tool_status(S(en ? "Cannot open the target disk (administrator?)." : "No se puede abrir el disco de destino (¿administrador?).")); return; }
+        TargetFacts t;
+        t.number = target->number; t.size = back.size(); t.sectorSize = target->logicalSector ? target->logicalSector : 512;
+        t.isSystemDisk = target->isSystemDisk; t.isVirtual = target->isVirtual;
+        auto plan = planClone(sf, t);
+        if (!target->volumes.empty()) { plan.blockers.push_back("The target has mounted volumes (drive letters): unmount/clear them first."); plan.allowed = false; plan.bytes = 0; }
+        std::string o = "=== PREVIEW ===\nSource: " + sf.label + "  " + humanSize(sf.size) + "\nTarget: disk " + std::to_string(target->number) + "  " + target->vendor + " " +
+                        target->product + "  " + target->busType + "  " + humanSize(t.size) + "\n";
+        if (plan.allowed) o += "WILL WRITE: offset 0, " + std::to_string(plan.bytes) + " bytes\n";
+        for (auto& w : plan.warnings) o += "WARNING: " + w + "\n";
+        for (auto& b : plan.blockers) o += "BLOCKED: " + b + "\n";
+        ui->set_tool_output(S(o));
+        if (!plan.allowed) { ui->set_tool_status(S(en ? "Not allowed. Nothing will be written." : "No permitido. No se escribirá nada.")); return; }
+        pendingClone->plan = plan; pendingClone->src = src; pendingClone->target = int(target->number);
+        ui->set_clone_ready(true);
+        ui->set_tool_status(S((en ? "Type exactly: " : "Escribe exactamente: ") + plan.token));
+    });
+    ui->on_clone_apply([ui, pendingClone, clearClone, cancelFlag, toolBusy, &lang](slint::SharedString typed) {
+        const bool en = lang == 1;
+        if (pendingClone->target < 0 || toolBusy->load()) return;
+        if (std::string(typed) != pendingClone->plan.token) { ui->set_tool_status(S(en ? "The confirmation text does not match. Nothing written." : "El texto de confirmación no coincide. No se ha escrito nada.")); return; }
+        auto pc = std::make_shared<PendingClone>(*pendingClone);
+        std::string tok(typed);
+        if (toolBusy->exchange(true)) return;
+        cancelFlag->store(false);
+        clearClone();
+        ui->set_tool_busy(true); ui->set_tool_progress(0); ui->set_tool_output(S(""));
+        ui->set_tool_status(S("."));
+        std::thread([=]() {
+            auto last = std::make_shared<std::atomic<long long>>(0);
+            DeviceSource back{pc->target};
+            DeviceSink sink{pc->target};
+            CloneResult res;
+            if (!back.ok() || !sink.ok()) res.error = en ? "cannot open the target for writing (administrator?)" : "no se puede abrir el destino para escribir (¿administrador?)";
+            else res = applyClone(*pc->src, sink, back, pc->plan, tok, [&](int ph, uint64_t d, uint64_t tot) {
+                long long now = GetTickCount64();
+                if (now - last->load() >= 100 || d == tot) {
+                    last->store(now);
+                    float f = tot ? float(double(d) / double(tot)) : 0.f;
+                    std::string txt = std::string(ph == 0 ? (en ? "Copying " : "Copiando ") : (en ? "Verifying " : "Verificando ")) + humanSize(d) + " / " + humanSize(tot) + "  (" + std::to_string(int(f * 100)) + " %)";
+                    slint::invoke_from_event_loop([=]() { ui->set_tool_progress(f); ui->set_tool_status(S(txt)); });
+                }
+                return !cancelFlag->load();
+            });
+            if (back.ok() && sink.ok()) sink.refreshLayout();
+            std::string msg = res.ok ? (en ? "Cloned, flushed and verified by reading back: " : "Clonado, vaciado y verificado releyendo: ") + humanSize(res.copied)
+                              : res.cancelled ? (en ? "Cancelled. The target may be partially written." : "Cancelado. El destino puede haber quedado a medias.")
+                              : (en ? "FAILED: " : "ERROR: ") + res.error + (res.written ? (en ? " (the target may be partially written)" : " (el destino puede haber quedado a medias)") : "");
+            slint::invoke_from_event_loop([=]() {
+                ui->set_tool_busy(false); ui->set_tool_progress(res.ok ? 1.f : 0.f);
+                ui->set_tool_status(S(msg)); ui->set_tool_output(S(msg));
+                toolBusy->store(false);
+            });
+        }).detach();
+    });
+    ui->on_tool_run([ui, st, selected, filePath, cancelFlag, toolBusy, partRange, &lang](slint::SharedString cmdS, slint::SharedString arg) {
         const ToolStr& s = lang == 1 ? kToolEn : kToolEs;
         std::string cmd(cmdS), a(arg);
         std::shared_ptr<ByteSource> src;
@@ -314,7 +584,10 @@ int main(int argc, char** argv) {
             if (f->ok()) src = f;
         } else if (*selected >= 0 && *selected < int(st->visible.size())) {
             auto d = std::make_shared<DeviceSource>(st->disks[st->visible[*selected]].number);
-            if (d->ok()) src = d;
+            if (d->ok()) {
+                if (partRange->second) src = std::make_shared<RangeSource>(d, partRange->first, partRange->second);
+                else src = d;
+            }
         } else { ui->set_tool_status(S(s.noSource)); return; }
         if (!src) { ui->set_tool_status(S(s.cantOpen)); return; }
         if (cmd.rfind("hex", 0) == 0) {
@@ -348,6 +621,8 @@ int main(int argc, char** argv) {
             outPath = pickFile(true);
             if (outPath.empty()) return;
         }
+        uint32_t recSs = 512;
+        if (filePath->empty() && *selected >= 0 && *selected < int(st->visible.size())) { auto ls = st->disks[st->visible[*selected]].logicalSector; if (ls == 4096) recSs = 4096; }
         if (toolBusy->exchange(true)) return;
         cancelFlag->store(false);
         ui->set_tool_busy(true); ui->set_tool_progress(0); ui->set_tool_output(S(""));
@@ -369,6 +644,16 @@ int main(int argc, char** argv) {
                                    (cmd == "image" ? "\n" + outPath : "");
                 else if (r.cancelled) result = s.cancelled;
                 else result = r.error == "output file already exists" ? s.outExists : "Error: " + r.error;
+            } else if (cmd == "recover") {
+                RecoverResult r = findLostPartitions(*src, recSs, *cancelFlag, prog);
+                if (r.cancelled) result = s.cancelled;
+                else if (!r.ok) result = "Error: " + r.error;
+                else {
+                    result = std::string(s.done) + "\nFound: " + std::to_string(r.found.size()) + "  (read-only; nothing was written)";
+                    for (auto& f : r.found)
+                        result += "\n" + f.filesystem + "  start LBA " + std::to_string(f.firstLba) + "  sectors " + std::to_string(f.sectorCount) + "  " +
+                                  humanSize(f.sectorCount * recSs) + (f.overlapsExisting ? "  (already in the table)" : "  (LOST: create it with Create partition using these values)");
+                }
             } else {
                 ScanResult r = surfaceScan(*src, *cancelFlag, prog);
                 if (r.cancelled) result = s.cancelled;
