@@ -361,13 +361,15 @@ export component MainWindow inherits Window {
                             clip: true;
                             Text { x: 3px; y: 1px; text: s.free ? "" : s.label; font-size: 10px; font-weight: 600; color: Palette.accent-foreground; overflow: elide; }
                             Text { x: 3px; y: 14px; text: s.size; font-size: 9px; color: s.free ? Palette.foreground.with-alpha(0.7) : Palette.accent-foreground; overflow: elide; }
+                            if !s.free: Rectangle { x: parent.width - 5px; y: 6px; width: 3px; height: parent.height - 12px; border-radius: 1px; background: Palette.accent-foreground.with-alpha(0.75); }
+                            if !s.free: Rectangle { x: 2px; y: 6px; width: 3px; height: parent.height - 12px; border-radius: 1px; background: Palette.accent-foreground.with-alpha(0.75); }
                         }
                         plan-ta := TouchArea {
                             property <MouseCursor> cur: MouseCursor.default;
                             mouse-cursor: cur;
                             pointer-event(e) => {
                                 if (e.button == PointerEventButton.left && e.kind == PointerEventKind.down) {
-                                    root.plan-press(self.mouse-x / self.width, 6px / self.width);
+                                    root.plan-press(self.mouse-x / self.width, 9px / self.width);
                                 } else if (e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel) {
                                     root.plan-release();
                                 }
@@ -376,7 +378,7 @@ export component MainWindow inherits Window {
                                 if (self.pressed) {
                                     root.plan-drag(self.mouse-x / self.width);
                                 } else {
-                                    let h = root.plan-hit(self.mouse-x / self.width, 6px / self.width);
+                                    let h = root.plan-hit(self.mouse-x / self.width, 9px / self.width);
                                     cur = h == 1 ? MouseCursor.ew-resize : h == 2 ? MouseCursor.move : MouseCursor.default;
                                 }
                             }
@@ -519,7 +521,7 @@ export component MainWindow inherits Window {
                                         Cell { text: p.type; width: 140px; }
                                         Cell { text: p.fs; width: 70px; }
                                         Cell { text: p.size; width: 90px; }
-                                        Cell { text: p.offset; width: 110px; }
+                                        Cell { text: p.offset; width: 110px; color: Palette.foreground.with-alpha(0.6); font-italic: true; }
                                         Cell { text: p.volume; }
                                     }
                                     TouchArea { clicked => { root.part-selected(i); } }

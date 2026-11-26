@@ -1,5 +1,10 @@
 ﻿# Changelog
 
+## 0.5.1 - Interface polish
+- Partition bar: visible grip marks on both edges of each partition and a wider grab zone (9 px); the resize cursor is the standard horizontal double arrow.
+- Partition table: the `Offset` column is now `Start on disk` (`Inicio en el disco`) and drawn in a muted italic tone so it is not mistaken for the size.
+- Not verified: mouse drag in the GUI by automated test (checked by hand by the author only), installer, in-app update, physical disks, CI.
+
 ## 0.5.0 - Partition editing, formatting and recovery
 - Includes everything listed under the 0.4.0 notes below (never published separately), plus: redesigned window with menu bar, toolbar and right-click menu; `diskpro-tools recover` and a Tools button that look for lost NTFS/FAT32/exFAT partitions (read-only; unit-tested in memory and on a synthetic image, not on real lost disks).
 - Not verified: GUI mouse interaction, installer, in-app update, physical disks, CI.

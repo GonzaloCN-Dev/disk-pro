@@ -20,9 +20,9 @@
 
 Disk Pro es una aplicación de escritorio en español e inglés para inspeccionar discos físicos y virtuales, sus tablas de particiones y su salud. Está escrita en C++ con Slint: sin Electron, sin WebView y sin servidores. Desarrollado por **Gonzalo Cruz Núñez** ([GCN Dev](https://dev.gonzalocn.com/)).
 
-> **Estado: 0.5.0.** Lee discos y, **solo en discos virtuales (VHD) de hasta 4 GiB**, restaura tablas, clona, edita la tabla de particiones y formatea FAT32/exFAT. Busca particiones perdidas (solo lectura). No formatea NTFS, no mueve datos al redimensionar, no recupera archivos y no escribe en discos físicos: no se simula. Consulta [Estado y límites](#estado-y-límites).
+> **Estado: 0.5.1.** Lee discos y, **solo en discos virtuales (VHD) de hasta 4 GiB**, restaura tablas, clona, edita la tabla de particiones y formatea FAT32/exFAT. Busca particiones perdidas (solo lectura). No formatea NTFS, no mueve datos al redimensionar, no recupera archivos y no escribe en discos físicos: no se simula. Consulta [Estado y límites](#estado-y-límites).
 
-*EN – Disk Pro is a free, open-source, native Windows disk inspector (GPT/MBR, partitions, NVMe health, imaging, hex viewer). Version 0.5.0 reads any disk; writing (restore, clone, partition-table edits, FAT32/exFAT format) is limited to virtual disks of up to 4 GiB. Lost-partition search is read-only. No NTFS formatting, no physical-disk writes.*
+*EN – Disk Pro is a free, open-source, native Windows disk inspector (GPT/MBR, partitions, NVMe health, imaging, hex viewer). Version 0.5.1 reads any disk; writing (restore, clone, partition-table edits, FAT32/exFAT format) is limited to virtual disks of up to 4 GiB. Lost-partition search is read-only. No NTFS formatting, no physical-disk writes.*
 
 ## Capturas
 
@@ -74,7 +74,7 @@ Windows 10 u 11 de 64 bits. El instalador incluye el runtime de Visual C++; el z
 
 ## Instalación
 
-Descarga `DiskPro-Setup-0.5.0.exe` (instalador, por usuario, sin administrador) o `DiskPro-0.5.0-win64-portable.zip` desde [Releases](https://github.com/GonzaloCN-Dev/disk-pro/releases/latest). Los hashes están en `SHA256SUMS.txt`.
+Descarga `DiskPro-Setup-0.5.1.exe` (instalador, por usuario, sin administrador) o `DiskPro-0.5.1-win64-portable.zip` desde [Releases](https://github.com/GonzaloCN-Dev/disk-pro/releases/latest). Los hashes están en `SHA256SUMS.txt`.
 
 ## Compilar desde el código
 
@@ -82,7 +82,7 @@ Requisitos: Visual Studio 2022 Build Tools (C++, CMake, Ninja) y el SDK C++ de S
 
 ```
 build.cmd      # compila y ejecuta las pruebas
-package.cmd    # genera dist\DiskPro-0.5.0-win64-portable.zip
+package.cmd    # genera dist\DiskPro-0.5.1-win64-portable.zip
 powershell -File installer\build-installer.ps1   # instalador (requiere Inno Setup 6)
 ```
 

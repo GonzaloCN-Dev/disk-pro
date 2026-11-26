@@ -2,7 +2,7 @@
 ; Compilar con: installer\build-installer.ps1
 
 #ifndef AppVersion
-  #define AppVersion "0.5.0"
+  #define AppVersion "0.5.1"
 #endif
 #define AppName "Disk Pro"
 #define AppPublisher "Gonzalo Cruz Núñez"

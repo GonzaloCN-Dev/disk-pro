@@ -46,13 +46,13 @@ struct Strings {
 const Strings kEs = {"Disk Pro", "Discos", "Particiones", "Diagnóstico (solo lectura)", "Filtrar discos…", "Actualizar", "Tema",
                      "Idioma", "Densidad", "Acerca de", "Cerrar", "Cargando discos…", "No se encontraron discos.", "Error: ",
                      "Solo lectura, salvo «Restaurar tabla», «Clonar» y la edición de tabla, que escriben únicamente en discos virtuales (VHD).", "Salud", "Sin incidencias detectadas.", "N.º",
-                     "Tipo", "Sistema", "Tamaño", "Desplazamiento", "Volumen", "Libre",
+                     "Tipo", "Sistema", "Tamaño", "Inicio en el disco", "Volumen", "Libre",
                      "© Gonzalo Cruz Núñez · GCN Dev. Software libre bajo licencia MIT.", "Selecciona un disco.",
                      {"Sistema", "Claro", "Oscuro"}, {"Compacta", "Normal", "Amplia"}};
 const Strings kEn = {"Disk Pro", "Disks", "Partitions", "Diagnostics (read-only)", "Filter disks…", "Refresh", "Theme",
                      "Language", "Density", "About", "Close", "Loading disks…", "No disks found.", "Error: ",
                      "Read-only, except 'Restore table' and 'Clone', which only write to virtual disks (VHD).", "Health", "No issues found.", "No.",
-                     "Type", "File system", "Size", "Offset", "Volume", "Free",
+                     "Type", "File system", "Size", "Start on disk", "Volume", "Free",
                      "© Gonzalo Cruz Núñez · GCN Dev. Free software under the MIT license.", "Select a disk.",
                      {"System", "Light", "Dark"}, {"Compact", "Normal", "Comfortable"}};
 
