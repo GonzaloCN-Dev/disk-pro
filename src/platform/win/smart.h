@@ -7,7 +7,11 @@
 
 namespace diskpro::win {
 
+enum class HealthStatus : uint8_t { Available, Unsupported, QueryError, OpenError };
+
 struct HealthInfo {
+    HealthStatus status = HealthStatus::Unsupported;
+    uint32_t errorCode = 0;
     bool nvmeAvailable = false;       // NVMe SMART/Health log page read
     uint8_t criticalWarning = 0;      // bitmask, 0 = none
     int temperatureC = -1;
@@ -26,6 +30,9 @@ struct HealthInfo {
 };
 
 HealthInfo queryHealth(uint32_t diskNumber);
+// Pure classification helper shared with tests. A failed IOCTL is unsupported only for
+// explicitly documented "not supported/invalid function" errors; other failures are errors.
+HealthStatus classifyHealthStatus(bool opened, bool dataAvailable, bool allQueriesUnsupported);
 // Parses the standard 512-byte ATA SMART READ DATA payload returned in STORAGE_PREDICT_FAILURE.
 // Exposed for deterministic tests; unknown vendor attributes are ignored.
 bool parseAtaSmart(const uint8_t* data, size_t size, HealthInfo& health);

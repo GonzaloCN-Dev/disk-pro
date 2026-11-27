@@ -11,6 +11,12 @@
 
 namespace diskpro::win {
 
+HealthStatus classifyHealthStatus(bool opened, bool dataAvailable, bool allQueriesUnsupported) {
+    if (!opened) return HealthStatus::OpenError;
+    if (dataAvailable) return HealthStatus::Available;
+    return allQueriesUnsupported ? HealthStatus::Unsupported : HealthStatus::QueryError;
+}
+
 bool parseAtaSmart(const uint8_t* data, size_t size, HealthInfo& h) {
     if (!data || size < 362) return false;
     bool any = false;
@@ -37,9 +43,25 @@ bool parseAtaSmart(const uint8_t* data, size_t size, HealthInfo& h) {
 
 HealthInfo queryHealth(uint32_t n) {
     HealthInfo h;
+    bool anyFailure = false;
+    bool allFailuresUnsupported = true;
+    DWORD firstError = ERROR_SUCCESS;
+    auto recordFailure = [&](DWORD error) {
+        anyFailure = true;
+        if (firstError == ERROR_SUCCESS) firstError = error;
+        if (error != ERROR_INVALID_FUNCTION && error != ERROR_NOT_SUPPORTED &&
+            error != ERROR_INVALID_PARAMETER && error != ERROR_BAD_COMMAND) {
+            allFailuresUnsupported = false;
+        }
+    };
     std::string path = "\\\\.\\PhysicalDrive" + std::to_string(n);
     HANDLE dev = CreateFileA(path.c_str(), 0, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
-    if (dev == INVALID_HANDLE_VALUE) { h.note = "cannot open device (error " + std::to_string(GetLastError()) + ")"; return h; }
+    if (dev == INVALID_HANDLE_VALUE) {
+        h.status = classifyHealthStatus(false, false, false);
+        h.errorCode = GetLastError();
+        h.note = "cannot open device (error " + std::to_string(h.errorCode) + ")";
+        return h;
+    }
 
     // NVMe SMART / Health Information log (page 0x02), read via standard storage query.
     {
@@ -58,19 +80,33 @@ HealthInfo queryHealth(uint32_t n) {
         ps->ProtocolDataLength = sizeof(NVME_HEALTH_INFO_LOG);
         DWORD ret = 0;
         if (DeviceIoControl(dev, IOCTL_STORAGE_QUERY_PROPERTY, buf.data(), size, buf.data(), size, &ret, nullptr)) {
+            const size_t protocolOffset = offsetof(STORAGE_PROTOCOL_DATA_DESCRIPTOR, ProtocolSpecificData);
+            if (ret < protocolOffset + sizeof(STORAGE_PROTOCOL_SPECIFIC_DATA)) {
+                recordFailure(ERROR_INVALID_DATA);
+            } else {
             auto* desc = reinterpret_cast<STORAGE_PROTOCOL_DATA_DESCRIPTOR*>(buf.data());
             auto& spd = desc->ProtocolSpecificData;
-            auto* log = reinterpret_cast<NVME_HEALTH_INFO_LOG*>(reinterpret_cast<BYTE*>(&spd) + spd.ProtocolDataOffset);
-            h.nvmeAvailable = true;
-            h.criticalWarning = log->CriticalWarning.AsUchar;
-            unsigned k = unsigned(log->Temperature[1]) << 8 | log->Temperature[0];
-            h.temperatureC = k > 0 ? int(k) - 273 : -1;
-            h.availableSparePct = log->AvailableSpare;
-            h.percentageUsed = log->PercentageUsed;
-            auto le = [](const UCHAR* p, int len) { uint64_t v = 0; for (int i = len - 1; i >= 0; --i) v = v << 8 | p[i]; return v; };
-            h.powerOnHours = le(log->PowerOnHours, 8);  // low 64 bits of the 128-bit counter
-            h.unsafeShutdowns = le(log->UnsafeShutdowns, 8);
-            h.mediaErrors = le(log->MediaErrors, 8);
+            const size_t relativeOffset = spd.ProtocolDataOffset;
+            const size_t available = ret - protocolOffset;
+            if (relativeOffset > available || spd.ProtocolDataLength > available - relativeOffset ||
+                spd.ProtocolDataLength < sizeof(NVME_HEALTH_INFO_LOG)) {
+                recordFailure(ERROR_INVALID_DATA);
+            } else {
+                auto* log = reinterpret_cast<NVME_HEALTH_INFO_LOG*>(reinterpret_cast<BYTE*>(&spd) + relativeOffset);
+                h.nvmeAvailable = true;
+                h.criticalWarning = log->CriticalWarning.AsUchar;
+                unsigned k = unsigned(log->Temperature[1]) << 8 | log->Temperature[0];
+                h.temperatureC = k > 0 ? int(k) - 273 : -1;
+                h.availableSparePct = log->AvailableSpare;
+                h.percentageUsed = log->PercentageUsed;
+                auto le = [](const UCHAR* p, int len) { uint64_t v = 0; for (int i = len - 1; i >= 0; --i) v = v << 8 | p[i]; return v; };
+                h.powerOnHours = le(log->PowerOnHours, 8);  // low 64 bits of the 128-bit counter
+                h.unsafeShutdowns = le(log->UnsafeShutdowns, 8);
+                h.mediaErrors = le(log->MediaErrors, 8);
+            }
+            }
+        } else {
+            recordFailure(GetLastError());
         }
     }
 
@@ -82,11 +118,16 @@ HealthInfo queryHealth(uint32_t n) {
             h.predictFailureAvailable = true;
             h.predictFailure = pf.PredictFailure != 0;
             parseAtaSmart(pf.VendorSpecific, sizeof pf.VendorSpecific, h);
-        }
+        } else recordFailure(GetLastError());
     }
     CloseHandle(dev);
-    if (!h.nvmeAvailable && !h.ataAvailable && !h.predictFailureAvailable)
-        h.note = "SMART not supported or not exposed by this device/driver (common for USB bridges and virtual disks)";
+    const bool dataAvailable = h.nvmeAvailable || h.ataAvailable || h.predictFailureAvailable;
+    h.status = classifyHealthStatus(true, dataAvailable, anyFailure && allFailuresUnsupported);
+    h.errorCode = dataAvailable ? ERROR_SUCCESS : firstError;
+    if (h.status == HealthStatus::Unsupported)
+        h.note = "SMART is not supported by this device/driver";
+    else if (h.status == HealthStatus::QueryError)
+        h.note = "SMART query failed (error " + std::to_string(h.errorCode) + ")";
     return h;
 }
 

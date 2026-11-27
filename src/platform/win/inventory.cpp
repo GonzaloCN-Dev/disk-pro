@@ -3,9 +3,13 @@
 
 #include <windows.h>
 #include <winioctl.h>
+#include <wbemidl.h>
 
 #include <algorithm>
+#include <cwctype>
 #include <memory>
+#include <string>
+#include <unordered_map>
 
 namespace diskpro::win {
 namespace {
@@ -16,6 +20,112 @@ struct Handle {
     ~Handle() { if (h != INVALID_HANDLE_VALUE) CloseHandle(h); }
     bool ok() const { return h != INVALID_HANDLE_VALUE; }
 };
+
+template <class T> struct ComPtr {
+    T* p = nullptr;
+    ~ComPtr() { if (p) p->Release(); }
+    T** put() { if (p) { p->Release(); p = nullptr; } return &p; }
+    T* operator->() const { return p; }
+    explicit operator bool() const { return p != nullptr; }
+};
+
+HRESULT invokeVolumeMethod(IWbemServices* services, BSTR path, const wchar_t* method,
+                           const wchar_t* outputName, uint32_t& value) {
+    BSTR methodName = SysAllocString(method);
+    if (!methodName) return E_OUTOFMEMORY;
+    ComPtr<IWbemClassObject> result;
+    const HRESULT hr = services->ExecMethod(path, methodName, 0, nullptr, nullptr, result.put(), nullptr);
+    SysFreeString(methodName);
+    if (FAILED(hr) || !result) return hr;
+    VARIANT returnValue;
+    VariantInit(&returnValue);
+    const HRESULT returnHr = result->Get(L"ReturnValue", 0, &returnValue, nullptr, nullptr);
+    if (FAILED(returnHr) || (returnValue.vt != VT_UI4 && returnValue.vt != VT_I4) || returnValue.ulVal != 0) {
+        VariantClear(&returnValue);
+        return FAILED(returnHr) ? returnHr : WBEM_E_FAILED;
+    }
+    VariantClear(&returnValue);
+    VARIANT v;
+    VariantInit(&v);
+    const HRESULT propertyHr = result->Get(outputName, 0, &v, nullptr, nullptr);
+    if (SUCCEEDED(propertyHr) && (v.vt == VT_UI4 || v.vt == VT_I4)) value = v.ulVal;
+    else if (SUCCEEDED(propertyHr)) {
+        VariantClear(&v);
+        return WBEM_E_TYPE_MISMATCH;
+    }
+    VariantClear(&v);
+    return propertyHr;
+}
+
+std::unordered_map<char, BitLockerStatus> queryBitLockerByDriveLetter() {
+    std::unordered_map<char, BitLockerStatus> result;
+    const HRESULT comHr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    const bool uninitialize = SUCCEEDED(comHr);
+    if (FAILED(comHr) && comHr != RPC_E_CHANGED_MODE) return result;
+    const HRESULT securityHr = CoInitializeSecurity(nullptr, -1, nullptr, nullptr, RPC_C_AUTHN_LEVEL_DEFAULT,
+                                                     RPC_C_IMP_LEVEL_IMPERSONATE, nullptr, EOAC_NONE, nullptr);
+    if (FAILED(securityHr) && securityHr != RPC_E_TOO_LATE) {
+        if (uninitialize) CoUninitialize();
+        return result;
+    }
+
+    ComPtr<IWbemLocator> locator;
+    HRESULT hr = CoCreateInstance(CLSID_WbemLocator, nullptr, CLSCTX_INPROC_SERVER,
+                                  IID_IWbemLocator, reinterpret_cast<void**>(locator.put()));
+    if (FAILED(hr) || !locator) { if (uninitialize) CoUninitialize(); return result; }
+    BSTR nameSpace = SysAllocString(L"ROOT\\CIMV2\\Security\\MicrosoftVolumeEncryption");
+    if (!nameSpace) { if (uninitialize) CoUninitialize(); return result; }
+    ComPtr<IWbemServices> services;
+    hr = locator->ConnectServer(nameSpace, nullptr, nullptr, nullptr, 0, nullptr, nullptr, services.put());
+    SysFreeString(nameSpace);
+    if (FAILED(hr) || !services ||
+        FAILED(CoSetProxyBlanket(services.p, RPC_C_AUTHN_WINNT, RPC_C_AUTHZ_NONE, nullptr,
+                                 RPC_C_AUTHN_LEVEL_CALL, RPC_C_IMP_LEVEL_IMPERSONATE, nullptr, EOAC_NONE))) {
+        if (uninitialize) CoUninitialize();
+        return result;
+    }
+
+    BSTR language = SysAllocString(L"WQL");
+    BSTR query = SysAllocString(L"SELECT DeviceID, DriveLetter FROM Win32_EncryptableVolume");
+    if (!language || !query) {
+        if (language) SysFreeString(language);
+        if (query) SysFreeString(query);
+        if (uninitialize) CoUninitialize();
+        return result;
+    }
+    ComPtr<IEnumWbemClassObject> enumerator;
+    hr = services->ExecQuery(language, query, WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY,
+                             nullptr, enumerator.put());
+    SysFreeString(language);
+    SysFreeString(query);
+    if (FAILED(hr) || !enumerator) { if (uninitialize) CoUninitialize(); return result; }
+
+    for (;;) {
+        ComPtr<IWbemClassObject> volume;
+        ULONG count = 0;
+        hr = enumerator->Next(WBEM_INFINITE, 1, volume.put(), &count);
+        if (FAILED(hr) || count == 0 || !volume) break;
+        VARIANT drive, path;
+        VariantInit(&drive); VariantInit(&path);
+        const HRESULT driveHr = volume->Get(L"DriveLetter", 0, &drive, nullptr, nullptr);
+        const HRESULT pathHr = volume->Get(L"__PATH", 0, &path, nullptr, nullptr);
+        if (SUCCEEDED(driveHr) && SUCCEEDED(pathHr) && drive.vt == VT_BSTR && drive.bstrVal &&
+            SysStringLen(drive.bstrVal) >= 1 && path.vt == VT_BSTR && path.bstrVal) {
+            uint32_t conversion = 0, protection = 2;
+            const HRESULT conversionHr = invokeVolumeMethod(services.p, path.bstrVal, L"GetConversionStatus",
+                                                              L"ConversionStatus", conversion);
+            const HRESULT protectionHr = invokeVolumeMethod(services.p, path.bstrVal, L"GetProtectionStatus",
+                                                              L"ProtectionStatus", protection);
+            const auto status = classifyBitLockerStatus(conversion, protection, SUCCEEDED(conversionHr),
+                                                        SUCCEEDED(protectionHr));
+            result[char(std::towupper(drive.bstrVal[0]))] = status;
+        }
+        VariantClear(&drive);
+        VariantClear(&path);
+    }
+    if (uninitialize) CoUninitialize();
+    return result;
+}
 
 std::string trim(std::string s) {
     auto sp = [](unsigned char c) { return std::isspace(c); };
@@ -101,6 +211,28 @@ void queryLayout(HANDLE h, DiskInfo& d) {
 
 }  // namespace
 
+BitLockerStatus classifyBitLockerStatus(uint32_t conversionStatus, uint32_t protectionStatus,
+                                       bool conversionQuerySucceeded, bool protectionQuerySucceeded) {
+    // Win32_EncryptableVolume.GetConversionStatus values: fully decrypted/encrypted,
+    // encryption/decryption in progress, and their paused states.
+    if (conversionQuerySucceeded) {
+        switch (conversionStatus) {
+            case 0: return protectionQuerySucceeded && protectionStatus == 1
+                                   ? BitLockerStatus::Encrypted : BitLockerStatus::NotEncrypted;
+            case 1: return BitLockerStatus::Encrypted;
+            case 2: return BitLockerStatus::Encrypting;
+            case 3: return BitLockerStatus::Decrypting;
+            case 4: case 5: return BitLockerStatus::Paused;
+            default: return BitLockerStatus::Unknown;
+        }
+    }
+    if (protectionQuerySucceeded) {
+        if (protectionStatus == 1) return BitLockerStatus::Encrypted;
+        if (protectionStatus == 0) return BitLockerStatus::NotEncrypted;
+    }
+    return BitLockerStatus::Unknown;
+}
+
 std::vector<DiskInfo> enumerateDisks() {
     std::vector<DiskInfo> out;
     char sysDir[MAX_PATH]{};
@@ -126,6 +258,7 @@ std::vector<DiskInfo> enumerateDisks() {
         out.push_back(std::move(d));
     }
     // Map drive letters to disk numbers (volume handles opened with access 0).
+    const auto bitLockerByDrive = queryBitLockerByDriveLetter();
     DWORD mask = GetLogicalDrives();
     for (int c = 0; c < 26; ++c) {
         if (!(mask & (1u << c))) continue;
@@ -150,6 +283,8 @@ std::vector<DiskInfo> enumerateDisks() {
                         if (p.offsetBytes == uint64_t(ex->Extents[e].StartingOffset.QuadPart)) {
                             p.volume = root;
                             if (hasVolumeInfo) { p.filesystem = fsName; p.volumeLabel = volumeLabel; }
+                            const auto bitLocker = bitLockerByDrive.find(char(std::toupper(static_cast<unsigned char>(root[0]))));
+                            if (bitLocker != bitLockerByDrive.end()) p.bitLocker = bitLocker->second;
                             if (hasCapacity) {
                                 p.volumeTotalBytes = totalBytes.QuadPart;
                                 p.volumeFreeBytes = totalFreeBytes.QuadPart;

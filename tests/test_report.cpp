@@ -7,7 +7,7 @@ int main() {
     DiskInfo d; d.number = 3; d.vendor = "Msft"; d.product = "Virtual Disk"; d.sizeBytes = 128ull << 20; d.busType = "FileBackedVirtual";
     d.style = "GPT"; d.logicalSector = 512; d.physicalSector = 512; d.serialMasked = "****1234"; d.isVirtual = true;
     PartitionInfo p; p.number = 1; p.offsetBytes = 65536; p.lengthBytes = 40ull << 20; p.typeName = "Basic"; p.filesystem = "NTFS"; p.volume = "E:\\";
-    p.volumeLabel = "DATA";
+    p.volumeLabel = "DATA"; p.bitLocker = BitLockerStatus::Encrypted;
     p.volumeTotalBytes = 100ull << 20; p.volumeFreeBytes = 25ull << 20;
     d.partitions.push_back(p);
     DiskInfo s; s.number = 0; s.isSystemDisk = true; s.sizeBytes = 1ull << 40;
@@ -18,6 +18,8 @@ int main() {
     CHECK(r.find("Partition 1: offset 65536, 40.00 MiB, Basic, NTFS, label DATA, E:\\") != std::string::npos);
     CHECK(r.find("free 25.00 MiB / 100.00 MiB") != std::string::npos);
     CHECK(r.find("label DATA") != std::string::npos);
+    CHECK(r.find("BitLocker protected/encrypted") != std::string::npos);
+    CHECK(r.find("Physical") != std::string::npos);
     CHECK(r.find("[SYSTEM]") != std::string::npos && r.find("1024.00 GiB") != std::string::npos);
     CHECK(buildReport({}, {}, "1").find("No disks found.") != std::string::npos);
     std::printf(failures ? "report: %d failures\n" : "report: all passed\n", failures);

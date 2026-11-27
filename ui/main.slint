@@ -36,6 +36,9 @@ export global Tr {
     in property <string> select-disk;
     in property <[string]> theme-options;
     in property <[string]> density-options;
+    in property <[string]> bus-filter-options;
+    in property <[string]> kind-filter-options;
+    in property <[string]> health-filter-options;
     in property <string> tools;
     in property <string> t-hash;
     in property <string> t-image;
@@ -241,6 +244,9 @@ export component MainWindow inherits Window {
     callback restore-apply(string);
     callback disk-selected(int);
     callback filter-changed(string);
+    callback bus-filter-changed(string);
+    callback kind-filter-changed(string);
+    callback health-filter-changed(string);
     callback theme-changed(int);
     callback density-changed(int);
     callback language-changed(int);
@@ -426,6 +432,21 @@ export component MainWindow inherits Window {
                         placeholder-text: Tr.filter-hint;
                         accessible-label: Tr.filter-hint;
                         edited(t) => { root.filter-changed(t); }
+                    }
+                    ComboBox {
+                        model: Tr.bus-filter-options;
+                        accessible-label: Tr.bus-filter-options[0];
+                        selected(item) => { root.bus-filter-changed(item); }
+                    }
+                    ComboBox {
+                        model: Tr.kind-filter-options;
+                        accessible-label: Tr.kind-filter-options[0];
+                        selected(item) => { root.kind-filter-changed(item); }
+                    }
+                    ComboBox {
+                        model: Tr.health-filter-options;
+                        accessible-label: Tr.health-filter-options[0];
+                        selected(item) => { root.health-filter-changed(item); }
                     }
                     fs := FocusScope {
                         key-pressed(e) => {

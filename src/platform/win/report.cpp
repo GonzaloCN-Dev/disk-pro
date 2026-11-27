@@ -10,6 +10,16 @@ std::string size(uint64_t b) {
     else std::snprintf(s, sizeof s, "%.2f MiB", double(b) / double(1ull << 20));
     return s;
 }
+const char* bitLockerName(BitLockerStatus status) {
+    switch (status) {
+        case BitLockerStatus::NotEncrypted: return "off";
+        case BitLockerStatus::Encrypted: return "protected/encrypted";
+        case BitLockerStatus::Encrypting: return "encryption in progress";
+        case BitLockerStatus::Decrypting: return "decryption in progress";
+        case BitLockerStatus::Paused: return "paused";
+        default: return "unknown / not reported";
+    }
+}
 }  // namespace
 
 std::string buildReport(const std::vector<DiskInfo>& disks, const std::vector<std::string>& health, const std::string& v) {
@@ -19,7 +29,8 @@ std::string buildReport(const std::vector<DiskInfo>& disks, const std::vector<st
         const auto& d = disks[i];
         o += "Disk " + std::to_string(d.number) + ": " + d.vendor + " " + d.product + (d.isSystemDisk ? "  [SYSTEM]" : "") + "\r\n";
         o += "  Size: " + size(d.sizeBytes) + "   Bus: " + d.busType + "   Style: " + (d.style.empty() ? "?" : d.style) +
-             "   Sector: " + std::to_string(d.logicalSector) + "/" + std::to_string(d.physicalSector) + (d.isVirtual ? "   Virtual" : "") + "\r\n";
+             "   Sector: " + std::to_string(d.logicalSector) + "/" + std::to_string(d.physicalSector) +
+             (d.isVirtual ? "   Virtual" : "   Physical") + "\r\n";
         if (!d.serialMasked.empty()) o += "  Serial: " + d.serialMasked + "\r\n";
         if (i < health.size() && !health[i].empty()) o += "  Health: " + health[i] + "\r\n";
         if (!d.error.empty()) o += "  Notes: " + d.error + "\r\n";
@@ -29,6 +40,7 @@ std::string buildReport(const std::vector<DiskInfo>& disks, const std::vector<st
             if (!p.volumeLabel.empty()) o += ", label " + p.volumeLabel;
             if (!p.volume.empty()) o += ", " + p.volume;
             if (p.volumeTotalBytes) o += ", free " + size(p.volumeFreeBytes) + " / " + size(p.volumeTotalBytes);
+            if (!p.volume.empty()) o += ", BitLocker " + std::string(bitLockerName(p.bitLocker));
             o += "\r\n";
         }
         o += "\r\n";

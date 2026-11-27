@@ -38,6 +38,17 @@ using namespace diskpro;
 
 namespace {
 
+const char* bitLockerText(win::BitLockerStatus status, bool en) {
+    switch (status) {
+        case win::BitLockerStatus::NotEncrypted: return en ? "BitLocker: off" : "BitLocker: desactivado";
+        case win::BitLockerStatus::Encrypted: return en ? "BitLocker: protected" : "BitLocker: protegido";
+        case win::BitLockerStatus::Encrypting: return en ? "BitLocker: encrypting" : "BitLocker: cifrando";
+        case win::BitLockerStatus::Decrypting: return en ? "BitLocker: decrypting" : "BitLocker: descifrando";
+        case win::BitLockerStatus::Paused: return en ? "BitLocker: paused" : "BitLocker: pausado";
+        default: return en ? "BitLocker: status unavailable" : "BitLocker: estado no disponible";
+    }
+}
+
 struct Strings {
     const char *title, *disks, *parts, *diag, *filter, *refresh, *theme, *lang, *density, *about, *close, *loading, *empty,
         *err, *ro, *health, *nodiag, *cnum, *ctype, *cfs, *csize, *coff, *cvol, *free, *copy, *select;
@@ -98,6 +109,7 @@ struct State {
     std::vector<win::DiskInfo> disks;
     std::vector<std::string> health;
     std::vector<int> healthSeverity;  // 0 normal/unavailable, 1 caution, 2 critical
+    std::vector<win::HealthStatus> healthStatus;
     std::vector<int> visible;  // indices into disks after filtering
     std::atomic<bool> busy{false};
     std::atomic<unsigned> generation{0};  // cancels stale results
@@ -127,14 +139,32 @@ int main(int argc, char** argv) {
         g.set_copyright(S(t.copy)); g.set_select_disk(S(t.select));
         auto tm = vec<slint::SharedString>();
         auto dm = vec<slint::SharedString>();
+        auto buses = vec<slint::SharedString>();
+        auto kinds = vec<slint::SharedString>();
+        auto healthFilters = vec<slint::SharedString>();
         for (auto* s : t.themes) tm->push_back(S(s));
         for (auto* s : t.densities) dm->push_back(S(s));
+        buses->push_back(S(lang == 1 ? "All buses" : "Todos los buses"));
+        for (const char* bus : {"NVMe", "SATA", "ATA", "ATAPI", "USB", "SCSI", "RAID", "1394",
+                                "iSCSI", "SAS", "SD", "MMC", "Virtual", "FileBackedVirtual"})
+            buses->push_back(S(bus));
+        kinds->push_back(S(lang == 1 ? "All disk types" : "Todos los tipos"));
+        kinds->push_back(S(lang == 1 ? "Physical" : "Físicos"));
+        kinds->push_back(S(lang == 1 ? "Virtual" : "Virtuales"));
+        healthFilters->push_back(S(lang == 1 ? "All health states" : "Todos los estados"));
+        healthFilters->push_back(S(lang == 1 ? "Healthy" : "Sin alertas"));
+        healthFilters->push_back(S(lang == 1 ? "Needs attention" : "Requiere atención"));
+        healthFilters->push_back(S(lang == 1 ? "Unavailable" : "No disponible"));
         g.set_theme_options(tm); g.set_density_options(dm);
+        g.set_bus_filter_options(buses); g.set_kind_filter_options(kinds); g.set_health_filter_options(healthFilters);
     };
     applyStrings();
     ui->set_language_index(lang); ui->set_density_index(density); ui->set_theme_index(settings->theme);
 
     auto filterText = std::make_shared<std::string>();
+    auto filterBus = std::make_shared<std::string>();
+    auto filterKind = std::make_shared<std::string>();
+    auto filterHealth = std::make_shared<std::string>();
     auto selected = std::make_shared<int>(-1);
 
     // ---- Interactive partition bar (planning only: nothing is ever written from here) ----
@@ -224,6 +254,7 @@ int main(int argc, char** argv) {
                     volumeText += " (" + (ui->get_language_index() == 1 ? std::string("free ") : std::string("libre ")) +
                                   humanSize(p.volumeFreeBytes) + " / " + humanSize(p.volumeTotalBytes) + ")";
                 }
+                if (!p.volume.empty()) volumeText += " · " + std::string(bitLockerText(p.bitLocker, ui->get_language_index() == 1));
                 parts->push_back({S(std::to_string(p.number)), S(p.typeName.empty() ? "-" : p.typeName), S(p.filesystem),
                                   S(humanSize(p.lengthBytes)), S(humanSize(p.offsetBytes)), S(volumeText)});
                 ex.push_back({int(p.number), p.offsetBytes, p.lengthBytes});
@@ -260,7 +291,7 @@ int main(int argc, char** argv) {
         ui->set_parts(parts); ui->set_segments(segs); ui->set_diags(diags);
     };
 
-    auto rebuildList = [ui, st, filterText, showDisk]() {
+    auto rebuildList = [ui, st, filterText, filterBus, filterKind, filterHealth, showDisk]() {
         auto rows = vec<DiskRow>();
         st->visible.clear();
         std::string f = *filterText;
@@ -273,6 +304,14 @@ int main(int argc, char** argv) {
             for (auto& p : d.partitions) hay += p.typeName + p.filesystem + p.volume + p.volumeLabel;
             std::transform(hay.begin(), hay.end(), hay.begin(), [](unsigned char c) { return std::tolower(c); });
             if (!f.empty() && hay.find(f) == std::string::npos) continue;
+            if (!filterBus->empty() && d.busType != *filterBus) continue;
+            if (*filterKind == "physical" && d.isVirtual) continue;
+            if (*filterKind == "virtual" && !d.isVirtual) continue;
+            const auto hs = i < st->healthStatus.size() ? st->healthStatus[i] : win::HealthStatus::Unsupported;
+            const int severity = i < st->healthSeverity.size() ? st->healthSeverity[i] : 0;
+            if (*filterHealth == "healthy" && (hs != win::HealthStatus::Available || severity != 0)) continue;
+            if (*filterHealth == "attention" && severity == 0) continue;
+            if (*filterHealth == "unavailable" && hs == win::HealthStatus::Available) continue;
             st->visible.push_back(int(i));
             rows->push_back({S(name), S(d.busType), S(humanSize(d.sizeBytes)), S(d.style.empty() ? "RAW" : d.style),
                              S(d.isSystemDisk ? "SYSTEM" : d.isVirtual ? "virtual" : "")});
@@ -289,6 +328,7 @@ int main(int argc, char** argv) {
             auto disks = win::enumerateDisks();
             std::vector<std::string> health;
             std::vector<int> healthSeverity;
+            std::vector<win::HealthStatus> healthStatus;
             for (auto& d : disks) {
                 auto h = win::queryHealth(d.number);
                 char b[256];
@@ -302,17 +342,19 @@ int main(int argc, char** argv) {
                                   (unsigned long long)h.pendingSectors, (unsigned long long)h.uncorrectableSectors,
                                   h.predictFailure ? ", FAILURE PREDICTED" : "");
                 else if (h.predictFailureAvailable) std::snprintf(b, sizeof b, "SMART: %s", h.predictFailure ? "FAILURE PREDICTED" : "OK");
-                else std::snprintf(b, sizeof b, "n/a: %s", h.note.c_str());
+                else std::snprintf(b, sizeof b, "%s", h.note.c_str());
                 health.push_back(b);
                 int severity = 0;
-                if (h.predictFailure || h.criticalWarning) severity = 2;
+                if (h.status == win::HealthStatus::OpenError || h.status == win::HealthStatus::QueryError) severity = 1;
+                else if (h.predictFailure || h.criticalWarning) severity = 2;
                 else if (h.mediaErrors || h.reallocatedSectors || h.pendingSectors || h.uncorrectableSectors ||
                          h.temperatureC >= 70 || h.percentageUsed >= 90 || (h.nvmeAvailable && h.availableSparePct <= 10)) severity = 1;
                 healthSeverity.push_back(severity);
+                healthStatus.push_back(h.status);
             }
             slint::invoke_from_event_loop([=]() {
                 if (gen == st->generation.load()) {
-                    st->disks = disks; st->health = health; st->healthSeverity = healthSeverity;
+                    st->disks = disks; st->health = health; st->healthSeverity = healthSeverity; st->healthStatus = healthStatus;
                     rebuildList();
                     ui->set_loading(false);
                 }
@@ -334,6 +376,27 @@ int main(int argc, char** argv) {
 
     ui->on_refresh(refresh);
     ui->on_filter_changed([filterText, rebuildList](slint::SharedString t) { *filterText = std::string(t); rebuildList(); });
+    ui->on_bus_filter_changed([filterBus, rebuildList, ui](slint::SharedString item) {
+        const std::string value(item);
+        const bool en = ui->get_language_index() == 1;
+        *filterBus = value == (en ? "All buses" : "Todos los buses") ? "" : value;
+        rebuildList();
+    });
+    ui->on_kind_filter_changed([filterKind, rebuildList, ui](slint::SharedString item) {
+        const std::string value(item);
+        const bool en = ui->get_language_index() == 1;
+        *filterKind = value == (en ? "Virtual" : "Virtuales") ? "virtual" :
+                      value == (en ? "Physical" : "Físicos") ? "physical" : "";
+        rebuildList();
+    });
+    ui->on_health_filter_changed([filterHealth, rebuildList, ui](slint::SharedString item) {
+        const std::string value(item);
+        const bool en = ui->get_language_index() == 1;
+        *filterHealth = value == (en ? "Healthy" : "Sin alertas") ? "healthy" :
+                        value == (en ? "Needs attention" : "Requiere atención") ? "attention" :
+                        value == (en ? "Unavailable" : "No disponible") ? "unavailable" : "";
+        rebuildList();
+    });
     auto partRange = std::make_shared<std::pair<uint64_t, uint64_t>>(0, 0);   // length 0 = whole disk
     ui->on_quit([]() { slint::quit_event_loop(); });
     ui->on_part_selected([ui](int i) { ui->set_part_sel(i); });

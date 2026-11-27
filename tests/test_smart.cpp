@@ -14,6 +14,10 @@ static void attr(std::array<uint8_t, 512>& d, int slot, uint8_t id, uint64_t raw
 }
 
 int main() {
+    CHECK(classifyHealthStatus(false, false, false) == HealthStatus::OpenError);
+    CHECK(classifyHealthStatus(true, true, true) == HealthStatus::Available);
+    CHECK(classifyHealthStatus(true, false, true) == HealthStatus::Unsupported);
+    CHECK(classifyHealthStatus(true, false, false) == HealthStatus::QueryError);
     std::array<uint8_t, 512> d{};
     attr(d, 0, 5, 3); attr(d, 1, 9, 12345); attr(d, 2, 194, 42); attr(d, 3, 197, 2); attr(d, 4, 198, 1);
     HealthInfo h;

@@ -7,6 +7,15 @@
 
 namespace diskpro::win {
 
+enum class BitLockerStatus : uint8_t {
+    Unknown,
+    NotEncrypted,
+    Encrypted,
+    Encrypting,
+    Decrypting,
+    Paused
+};
+
 struct PartitionInfo {
     uint32_t number = 0;
     std::string style;  // MBR / GPT
@@ -18,6 +27,7 @@ struct PartitionInfo {
     std::string volume;      // drive letter root, e.g. "C:\\", when mounted
     std::string volumeLabel;
     std::string filesystem;  // reported by Windows for the mounted volume
+    BitLockerStatus bitLocker = BitLockerStatus::Unknown;
 };
 
 struct DiskInfo {
@@ -33,6 +43,10 @@ struct DiskInfo {
     bool isVirtual = false;
     std::string error;  // non-empty if some queries failed
 };
+
+// Maps documented Win32_EncryptableVolume conversion/protection values to a safe tri-state.
+BitLockerStatus classifyBitLockerStatus(uint32_t conversionStatus, uint32_t protectionStatus,
+                                        bool conversionQuerySucceeded, bool protectionQuerySucceeded);
 
 // Enumerates PhysicalDrive0..N. Never writes. Does not require elevation for the fields it can read.
 std::vector<DiskInfo> enumerateDisks();

@@ -1,5 +1,12 @@
 ﻿# Changelog
 
+## 0.7.1 - 2026-11-27
+- Added inventory filters for bus type, physical/virtual disks, and health state.
+- Added read-only BitLocker status detection per mounted volume through Windows WMI; unavailable data is reported as unknown rather than assumed unencrypted.
+- SMART health queries now distinguish unsupported devices from open/query errors using explicit status values.
+- Export reports now include physical/virtual classification, volume labels and capacity, and detectable BitLocker status.
+- Added unit coverage for SMART/BitLocker classification and report fields.
+
 ## 0.7.0 - 2026-11-26
 - Reorganized the main toolbar around direct disk tasks: analyze, find lost partitions, recover files, format and partition; task buttons are unavailable until the required disk/partition is selected and open focused task views with a clear return path.
 - Replaced the generic Tools entry with “Advanced tools” and moved it out of the primary task toolbar; low-level utilities remain available.
